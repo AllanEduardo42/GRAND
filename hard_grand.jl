@@ -1,16 +1,14 @@
 function hard_grand!(
     candidate::Vector{Bool},
-    err_vec::Vector{Bool},
     err_loc_vec::Vector{Int},
+    err_loc_vec_len::Int,
     max_query::Int,
-    y_demod::Vector{Bool},
-    Nc::Vector{Vector{Int}},    
-    N::Int
+    y_demod::Vector{Bool}, 
+    N::Int,
+    syndrome::Vector{Bool},
+    H::Matrix{Bool},
+    inc::Int
 )
-
-    err_loc_vec_len = 1
-
-    inc = 1
 
     n_guesses = 0
 
@@ -24,15 +22,34 @@ function hard_grand!(
 
     @fastmath @inbounds while while_one || n_guesses < max_query
 
-        @simd for i in eachindex(candidate)
-            candidate[i] = y_demod[i] ⊻ err_vec[i]
-        end
-        zerosym = iszerosyndrome(candidate,Nc)   
-        if zerosym
-            return zerosym
+        syn_flag = true
+        for j in eachindex(syndrome)
+            count = 0
+            H_line = view(H,j,:)
+            @simd for i in 1:err_loc_vec_len
+                if H_line[err_loc_vec[i]]
+                    count += 1
+                end               
+            end
+            sym = isodd(count)
+            if sym != syndrome[j]
+                syn_flag = false
+                break
+            end
+        end   
+
+        if syn_flag
+            candidate .= y_demod
+            for i in err_loc_vec
+                if i == 0
+                    break
+                end
+                candidate[i] ⊻= true
+            end
+            return true
         end
            
-        err_loc_vec_len = gen_next_err!(err_vec, err_loc_vec, err_loc_vec_len, inc, N)
+        err_loc_vec_len = increase_error!(err_loc_vec,err_loc_vec_len,inc,N)
         
         n_guesses += 1
 
@@ -40,42 +57,6 @@ function hard_grand!(
 
     return zerosym
     
-end
-
-# This function generates the new error location vector, given a previous error
-# location vector
-#
-# Inputs:
-#   N           - Code length
-#   err_loc_vec - Previous error location vector
-#
-#Outputs:
-#   err_loc_vec - New error location vector. [] if a new error location vector cannot be generated
-#   err_vec     - Binary error vector that corresponds to err_loc_vec. Zero vector if no error could be generated
-
-function gen_next_err!(
-    err_vec::Vector{Bool},
-    err_loc_vec::Vector{Int},
-    err_loc_vec_len::Int,
-    inc::Int,
-    N::Int
-)
-    @fastmath @inbounds begin
-
-        err_vec .= false
-
-        err_loc_vec_len = increase_error!(err_loc_vec,err_loc_vec_len,inc,N)
-
-        for i in err_loc_vec
-            if i == 0
-                break
-            end
-            err_vec[i] = true
-        end         
-    end
-
-    return err_loc_vec_len
-
 end
 
 # This function generates the next error location vector given the previous one

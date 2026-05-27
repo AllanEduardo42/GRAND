@@ -7,10 +7,11 @@ function GRAND_sim(
     G::Matrix{Bool},
     rgn_seed::Int,
     max_query::Int,
-    Nc::Vector{Vector{Int}},
     ebn0::Float64,
     R::Float64,
-    print::Bool
+    print::Bool,
+    H::Matrix{Bool},
+    even_code::Bool
 )
 
     # Set the random seeds
@@ -30,7 +31,6 @@ function GRAND_sim(
     y_demod = Vector{Bool}(undef,N)
     gabarito = Vector{Bool}(undef,N)
     candidate = Vector{Bool}(undef,N)
-    err_vec = Vector{Bool}(undef,N)
     err_loc_vec = zeros(Int,N)
 
     errors = 0
@@ -39,6 +39,8 @@ function GRAND_sim(
     # transform EbN0 in standard deviations
     variance = exp10.(-ebn0/10) / (2*R)
     stdev = sqrt.(variance)
+
+    syndrome = zeros(Bool,N-K)
 
     @fastmath @inbounds while min(errors,trials - errors) < max_errors
 
@@ -64,18 +66,33 @@ function GRAND_sim(
             y_demod[i] = signbit(signal[i])
         end
 
-        zerosym =  iszerosyndrome(y_demod,Nc)
+        # If the code is even, then check the parity of the demod to decide
+        # whether to query even or odd
+
+        # if even_code
+        #     y_demod_parity = mod(sum(y_demod),2)
+        #     if y_demod_parity == 1
+        #         test_zero_noise = false
+        #     end
+        #     inc = 2 # Hamming weight increment
+        # else
+        #     inc = 1
+        # end
+
+        syndrome .= H*y_demod
+
+        zerosym = iszero(syndrome)
         
         if zerosym 
             @simd for i in eachindex(biterror)
                 biterror[i] = y_demod[i] ⊻ cword[i]
             end
-        else
-            err_vec .= false
-            err_vec[1] = true
-            err_loc_vec .= 0
+        else          
+            err_loc_vec .= 0      
             err_loc_vec[1] = 1
-            zerosym = hard_grand!(candidate, err_vec, err_loc_vec, max_query,y_demod,Nc,N)
+            err_loc_vec_len = 1
+            inc = 1
+            zerosym = hard_grand!(candidate, err_loc_vec,err_loc_vec_len,max_query,y_demod,N,syndrome,H,inc)
             
             @simd for i in eachindex(biterror)
                 biterror[i] = candidate[i] ⊻ cword[i]
@@ -111,7 +128,7 @@ ________________________________________________________________________________
             print_test("Codeword",cword)
             print_test("Demodulated",y_demod)
             print_test("True error Vector", gabarito)
-            print_test("Estimated Error Vector", err_vec)
+            # print_test("Estimated Error Vector", err_vec)
             display("zerosym = $zerosym")       
             print_test("Bit Error",biterror)
         end      
