@@ -7,7 +7,8 @@ function hard_grand!(
     N::Int,
     syndrome::Vector{Bool},
     H::Matrix{Bool},
-    inc::Int
+    inc::Int,
+    Sum_syndromes::Matrix{Bool}
 )
 
     n_guesses = 0
@@ -18,25 +19,68 @@ function hard_grand!(
         while_one = false
     end
 
-    zerosym = false
+    start_index = 1
 
     @fastmath @inbounds while while_one || n_guesses < max_query
 
         syn_flag = true
-        for j in eachindex(syndrome)
-            count = 0
-            H_line = view(H,j,:)
-            @simd for i in 1:err_loc_vec_len
-                if H_line[err_loc_vec[i]]
-                    count += 1
-                end               
+
+        if err_loc_vec_len == 1  
+            for i=1:N   
+                n_guesses += 1
+                syn_flag = true
+                h_line = view(H,:,i)       
+                for j in eachindex(syndrome)
+                    sym = h_line[j]
+                    if sym != syndrome[j]
+                        syn_flag = false
+                        break
+                    end
+                end
+                if syn_flag
+                    err_loc_vec[1] = i
+                    break
+                end
             end
-            sym = isodd(count)
-            if sym != syndrome[j]
-                syn_flag = false
-                break
+        else
+            if start_index == 1
+                idx = err_loc_vec[1]
+                h_line = view(H,:,idx) 
+                @simd for j in axes(Sum_syndromes,1)
+                    Sum_syndromes[j,1] = h_line[j]
+                end
+                start_index += 1
             end
-        end   
+            if err_loc_vec_len > 2
+                for i in start_index:err_loc_vec_len-1
+                    idx = err_loc_vec[i]
+                    h_line = view(H,:,idx)  
+                    @simd for j in axes(Sum_syndromes,1)
+                        sym = Sum_syndromes[j,i-1]
+                        sym ⊻= h_line[j]
+                        Sum_syndromes[j,i] = sym
+                    end
+                end
+            end
+            last_idx = err_loc_vec[err_loc_vec_len]
+            for i = last_idx:N
+                n_guesses += 1
+                syn_flag = true 
+                h_line = view(H,:,i)   
+                for j in eachindex(syndrome)
+                    sym = Sum_syndromes[j,err_loc_vec_len-1] 
+                    sym ⊻= h_line[j]           
+                    if sym != syndrome[j]
+                        syn_flag = false
+                        break
+                    end
+                end
+                if syn_flag
+                    err_loc_vec[err_loc_vec_len] = i
+                    break
+                end
+            end
+        end
 
         if syn_flag
             candidate .= y_demod
@@ -47,15 +91,20 @@ function hard_grand!(
                 candidate[i] ⊻= true
             end
             return true
+        else
+            err_loc_vec[err_loc_vec_len] = N
+            err_loc_vec_len, start_index = increase_error!(err_loc_vec,err_loc_vec_len,inc,N)
         end
-           
-        err_loc_vec_len = increase_error!(err_loc_vec,err_loc_vec_len,inc,N)
-        
-        n_guesses += 1
+
+        # for i in 1:err_loc_vec_len
+        #     print(err_loc_vec[i])
+        #     print(" ")
+        # end
+        # println()        
 
     end
 
-    return zerosym
+    return false
     
 end
 
@@ -70,30 +119,28 @@ function increase_error!(
 
     inbounds = false
 
+    start_index = 1
+
     @fastmath @inbounds begin
     
-        for i = err_loc_vec_len:-1:1
+        for i = err_loc_vec_len-1:-1:1
 
-            if err_loc_vec[i] == N
-                continue
-            end
             inbounds = true
             index = err_loc_vec[i]
             err_loc_vec[i] = index + 1
-            if i < err_loc_vec_len
-                i_p = i + 1
-                offset = index - i + 1
-                for j = i_p : err_loc_vec_len
-                    new_index = offset + j
-                    if new_index ≤ N
-                        err_loc_vec[j] = new_index
-                    else
-                        inbounds = false
-                        break
-                    end
+            i_p = i + 1
+            offset = index - i + 1
+            for j = i_p : err_loc_vec_len
+                new_index = offset + j
+                if new_index ≤ N
+                    err_loc_vec[j] = new_index
+                else
+                    inbounds = false
+                    break
                 end
             end
             if inbounds
+                start_index = i
                 break
             end
         end
@@ -111,5 +158,5 @@ function increase_error!(
         end
     end
 
-    return err_loc_vec_len
+    return err_loc_vec_len, start_index
 end

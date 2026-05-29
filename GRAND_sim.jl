@@ -7,8 +7,7 @@ function GRAND_sim(
     G::Matrix{Bool},
     rgn_seed::Int,
     max_query::Int,
-    ebn0::Float64,
-    R::Float64,
+    stdev::Float64,
     print::Bool,
     H::Matrix{Bool},
     even_code::Bool
@@ -36,11 +35,13 @@ function GRAND_sim(
     errors = 0
     trials = 0
 
-    # transform EbN0 in standard deviations
-    variance = exp10.(-ebn0/10) / (2*R)
-    stdev = sqrt.(variance)
-
     syndrome = zeros(Bool,N-K)
+
+    Sum_syndromes = zeros(Bool,N-K,N)
+
+    if print
+        err_vec = zeros(Bool,N)         # error vector
+    end
 
     @fastmath @inbounds while min(errors,trials - errors) < max_errors
 
@@ -60,51 +61,68 @@ function GRAND_sim(
         @simd for i in eachindex(cword)
             u = 1 - 2*cword[i]  
             signal[i] += u              # sum the modulated signal
-        end
-
-        @simd for i in eachindex(y_demod)
             y_demod[i] = signbit(signal[i])
         end
+
+        syndrome .= H*y_demod           # syndrome
 
         # If the code is even, then check the parity of the demod to decide
         # whether to query even or odd
 
-        # if even_code
-        #     y_demod_parity = mod(sum(y_demod),2)
-        #     if y_demod_parity == 1
-        #         test_zero_noise = false
-        #     end
-        #     inc = 2 # Hamming weight increment
-        # else
-        #     inc = 1
-        # end
+        test_zero_noise = true
+        init_type_1 = true
+        if even_code
+            y_demod_parity = mod(sum(y_demod),2)
+            if y_demod_parity == 1
+                test_zero_noise = false
+            else
+                init_type_1 = false
+            end
+            inc = 2                     # Hamming weight increment
+        else
+            inc = 1
+        end
 
-        syndrome .= H*y_demod
+        zerosym = false
 
-        zerosym = iszero(syndrome)
+        if test_zero_noise
+            zerosym = iszero(syndrome)
+        end
+
+        err_loc_vec .= 0                
         
         if zerosym 
             @simd for i in eachindex(biterror)
                 biterror[i] = y_demod[i] ⊻ cword[i]
             end
-        else          
-            err_loc_vec .= 0      
+        else      
             err_loc_vec[1] = 1
-            err_loc_vec_len = 1
-            inc = 1
-            zerosym = hard_grand!(candidate, err_loc_vec,err_loc_vec_len,max_query,y_demod,N,syndrome,H,inc)
+            if init_type_1
+                err_loc_vec_len = 1
+            else
+                err_loc_vec[2] = 2
+                err_loc_vec_len = 2
+            end
+
+            zerosym = hard_grand!(
+                candidate,
+                err_loc_vec,
+                err_loc_vec_len,
+                max_query,
+                y_demod,
+                N,
+                syndrome,
+                H,
+                inc,
+                Sum_syndromes
+            )
             
+            # Calculate bit error
             @simd for i in eachindex(biterror)
                 biterror[i] = candidate[i] ⊻ cword[i]
             end
 
-        end
-
-        if print
-            @simd for i in eachindex(gabarito)
-                gabarito[i] = cword[i] ⊻ y_demod[i]
-            end
-        end      
+        end   
 
         if zerosym
             if iszero(biterror)
@@ -117,6 +135,10 @@ function GRAND_sim(
         end  
 
         if print
+            # True error vector
+            @simd for i in eachindex(gabarito)
+                gabarito[i] = cword[i] ⊻ y_demod[i]
+            end
             println("""
 ________________________________________________________________________________
 
@@ -128,7 +150,14 @@ ________________________________________________________________________________
             print_test("Codeword",cword)
             print_test("Demodulated",y_demod)
             print_test("True error Vector", gabarito)
-            # print_test("Estimated Error Vector", err_vec)
+            err_vec .= false
+            for i in eachindex(err_loc_vec)
+                if err_loc_vec[i] == 0
+                    break
+                end
+                err_vec[err_loc_vec[i]] = true
+            end
+            print_test("Estimated Error Vector", err_vec)
             display("zerosym = $zerosym")       
             print_test("Bit Error",biterror)
         end      
