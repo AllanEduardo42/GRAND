@@ -1,42 +1,84 @@
 using Random
 using LinearAlgebra
 using Plots
+using LoopVectorization
+using SpecialFunctions
+using Polynomials
+using SparseArrays
+using BenchmarkTools
+
+const MAXC2V = 1e3                      # saturate values for C2V (Inf approx)
+const MINC2V = -MAXC2V                  # -Inf approx
+
+function qfunc(x::Float64)
+    return 0.5 * erfc(x/sqrt(2))
+end
 
 include("Koopman.jl")
-include("../LDPC/GF2_poly.jl")
 include("../LDPC/GF2_functions.jl")
 include("make_code.jl")
 include("GRAND_sim.jl")
 include("calc_syndrome.jl")
+include("../LDPC/PEG.jl")
+include("../LDPC/LU_encoding.jl")
+include("../LDPC/auxiliary setup functions.jl")
+include("/home/allan/LDPC/Simulation core functions/encode_LDPC.jl")
+include("/home/allan/LDPC/simcore.jl")
+include("/home/allan/LDPC/Algorithms/Flooding.jl")
 
 SEED::Int = 1234
 
 KK = 32
-NN = 60
+NN = 64
 
-GG, HH, CRC_POLY, HD, KOOPMAN_POLY_HEX = CRC_code(NN,KK)
+MM = NN - KK
 
-even_code = iszero(mod.(sum(GG,dims=1),2))
+TEST = false
+PRINT = false
+
+# PP, HH, CRC_POLY, HD, KOOPMAN_POLY_HEX = CRC_code(NN,KK)
+# sum_G = sum(PP,dims=1) .⊻ ones(Bool,KK)
+
+#Generate Parity-Check Matrix by the PEG algorithm
+
+LAMBDA = [0.21, 0.25, 0.25, 0.29, 0]
+RO = [1.0, 0, 0, 0, 0, 0]
+H_PEG, GIRTH = PEG(LAMBDA,RO,MM,NN)
+HH, LL, UU, FF = LU_encoding(H_PEG,0)
+
+PP = zeros(Bool,MM,KK)
+
+for k in axes(PP,2)
+    PP[:,k] = gf2_solve_LU(LL,UU,HH[:,k])
+end
+
+sum_G = ones(Bool,KK)
+for k in axes(PP,2)
+    for m in axes(PP,1)
+        sum_G[k] ⊻=  PP[m,k]
+    end
+end
+
+even_code = iszero(sum_G)
 
 if !even_code
     display("Not an even code!")
-    throw(error())
 end
 
 # GRAND
 
 MAX_ERRORS = 36*3
 
-MAX_QUERY = 0
+MAX_ERR_LOC_VEC_LEN = 7
 
 EbN0 = [1.0, 1.5, 2.0, 2.5, 3.0]
 # EbN0 = [1.0]
 
 RR = KK/NN
 
-PRINT = false
-
-TEST = false
+# list of checks and variables nodes
+NC = make_cn2vn_list(HH)
+NV = make_vn2cn_list(HH)
 
 NTHREADS = Threads.nthreads()
 
@@ -52,6 +94,18 @@ Trials = Matrix{Int}(undef,num_ebn0,NTHREADS)
 
 FER = zeros(num_ebn0)
 
+### testando ints
+
+H_vec = zeros(Int,NN)
+
+for i in axes(HH,2)
+    for j in axes(HH,1)
+        if HH[j,i]
+            H_vec[i] += 2^(MM - j)
+        end
+    end
+end
+
 if !TEST
     for k in eachindex(EbN0)
 
@@ -61,9 +115,10 @@ if !TEST
 
         stats = @timed Threads.@threads for i in 1:NTHREADS
 
-            errors, trials = GRAND_sim(MAX_ERRORS ÷ NTHREADS,KK,NN,GG,RGN_SEEDS[i],MAX_QUERY,stdev,PRINT,HH,even_code)
+            errors, trials = GRAND_sim(MAX_ERRORS ÷ NTHREADS,PP,RGN_SEEDS[i],stdev,false,H_vec,even_code,MAX_ERR_LOC_VEC_LEN)
+            # _,_,errors,_,trials = simcore(KK,NN,nothing,stdev,HH,PP,NC,NV,[0 0],"PEG",0,"Flooding","TANH",MAX_ERRORS,50,false,0,0.0,[1],0.0,RGN_SEEDS[i],false,false) 
             Trials[k,i] = trials
-            Errors[k,i] = errors 
+            Errors[k,i] = errors
 
         end
         str = """Elapsed $(round(stats.time;digits=1)) seconds ($(round(stats.gctime/stats.time*100;digits=2))% gc time, $(round(stats.compile_time/stats.time*100,digits=2))% compilation time)"""
@@ -76,20 +131,12 @@ if !TEST
     end
 
     plotlyjs()
-    plot(EbN0, log10.(FER))
+    plot!(EbN0, log10.(FER),label="L=$MAX_ERR_LOC_VEC_LEN")
 else
     variance = exp10.(-EbN0[1]/10) / (2*RR)
     stdev = sqrt.(variance) 
-    @time GRAND_sim(10,KK,NN,GG,RGN_SEEDS[1],MAX_QUERY,stdev,PRINT,HH,even_code)
+    # @benchmark GRAND_sim(1,$PP,$(RGN_SEEDS[1]),$stdev,$PRINT,$HH,$even_code) seconds = 30
+    @time errors, trials = GRAND_sim(1,PP,RGN_SEEDS[1],stdev,PRINT,H_vec,even_code,MAX_ERR_LOC_VEC_LEN)
+    display((errors, trials))
+
 end
-
-
-# MSG = rand(Bool,KK)
-# CWORD = [MSG; zeros(Bool,NN-KK)]
-# _,R = divide_poly(CWORD,CRC_POLY)
-
-# CWORD = [MSG;R]
-
-# _,R = divide_poly(CWORD,CRC_POLY)
-
-# CWORD == GG*MSG

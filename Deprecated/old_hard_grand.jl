@@ -2,28 +2,41 @@ function hard_grand!(
     candidate::Vector{Bool},
     err_loc_vec::Vector{Int},
     err_loc_vec_len::Int,
-    max_err_loc_vec_len::Int,
+    max_query::Int,
     y_demod::Vector{Bool}, 
     N::Int,
-    syndrome::Int,
-    H::Vector{Int},
+    syndrome::Vector{Bool},
+    H::Matrix{Bool},
     inc::Int,
-    Sum_syndromes::Vector{Int}
+    Sum_syndromes::Matrix{Bool}
 )
+
+    n_guesses = 0
+
+    if max_query == 0
+        while_one = true
+    else
+        while_one = false
+    end
 
     start_index = 1
 
-    loop = true
+    @fastmath @inbounds while while_one || n_guesses < max_query
 
-    @inbounds @fastmath while loop
-
-        syn_flag = false
+        syn_flag = true
 
         if err_loc_vec_len == 1  
             for i=1:N   
-                h_column = H[i]
-                if h_column == syndrome
-                    syn_flag = true
+                n_guesses += 1
+                syn_flag = true
+                h_column = view(H,:,i)       
+                for j in eachindex(syndrome)
+                    if h_column[j] != syndrome[j]
+                        syn_flag = false
+                        break
+                    end
+                end
+                if syn_flag
                     err_loc_vec[1] = i
                     break
                 end
@@ -31,22 +44,38 @@ function hard_grand!(
         else
             if start_index == 1
                 idx = err_loc_vec[1]
-                Sum_syndromes[1] = H[idx]
+                h_column = view(H,:,idx) 
+                @turbo for j in axes(Sum_syndromes,1)
+                    Sum_syndromes[j,1] = h_column[j]
+                end
                 start_index += 1
             end
             if err_loc_vec_len > 2
                 for i in start_index:err_loc_vec_len-1
                     idx = err_loc_vec[i]
-                    Sum_syndromes[i] = Sum_syndromes[i-1] ⊻ H[idx]
+                    column_1 = view(Sum_syndromes,:,i-1)
+                    column_2 = view(H,:,idx)
+                    @turbo for j in axes(Sum_syndromes,1)
+                        Sum_syndromes[j,i] = column_1[j]
+                        Sum_syndromes[j,i] ⊻= column_2[j]
+                    end
                 end
             end
             last_idx = err_loc_vec[err_loc_vec_len]
-            s_column = Sum_syndromes[err_loc_vec_len-1]
+            s_column = view(Sum_syndromes,:,err_loc_vec_len-1)
             for i = last_idx:N
-                h_column = H[i]
-                syn = s_column ⊻ h_column  
-                if syn == syndrome
-                    syn_flag = true
+                n_guesses += 1
+                syn_flag = true 
+                h_column = view(H,:,i) 
+                for j in eachindex(syndrome)
+                    syn = s_column[j] 
+                    syn ⊻= h_column[j]       
+                    if syn != syndrome[j]
+                        syn_flag = false
+                        break
+                    end
+                end
+                if syn_flag
                     err_loc_vec[err_loc_vec_len] = i
                     break
                 end
@@ -64,8 +93,14 @@ function hard_grand!(
             return true
         else
             err_loc_vec[err_loc_vec_len] = N
-            err_loc_vec_len, start_index, loop = increase_error!(err_loc_vec,err_loc_vec_len,max_err_loc_vec_len,inc,N)
-        end      
+            err_loc_vec_len, start_index = increase_error!(err_loc_vec,err_loc_vec_len,inc,N)
+        end
+
+        # for i in 1:err_loc_vec_len
+        #     print(err_loc_vec[i])
+        #     print(" ")
+        # end
+        # println()        
 
     end
 
@@ -78,7 +113,6 @@ end
 function increase_error!(
     err_loc_vec::Vector{Int},
     err_loc_vec_len::Int,
-    max_err_loc_vec_len::Int,
     inc::Int,
     N::Int
 )
@@ -87,7 +121,7 @@ function increase_error!(
 
     start_index = 1
 
-    @inbounds @fastmath begin
+    @fastmath @inbounds begin
     
         for i = err_loc_vec_len-1:-1:1
 
@@ -117,15 +151,13 @@ function increase_error!(
                 return err_loc_vec_len
             end
             err_loc_vec_len += inc      # increments the length of err_loc_vec
-            if err_loc_vec_len > max_err_loc_vec_len
-                return err_loc_vec_len, start_index, false
-            end
-            @turbo for i = 1:err_loc_vec_len
+            @simd for i = 1:err_loc_vec_len
                 err_loc_vec[i] = i
-            end        
+            end  
+        
         end
     end
 
-    return err_loc_vec_len, start_index, true
+    return err_loc_vec_len, start_index
     
 end

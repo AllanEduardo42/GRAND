@@ -4,16 +4,16 @@ function GRAND_sim(
     max_errors::Int,
     P::Matrix{Bool},
     rgn_seed::Int,
+    max_query::Int,
     stdev::Float64,
     print::Bool,
-    H_vec::Vector{Int},
-    even_code::Bool,
-    max_err_loc_vec_len::Int
+    H::Matrix{Bool},
+    even_code::Bool
 )
 
-    M,K = size(P)
+    M,N = size(H)
 
-    N = M + K
+    K = N - M
 
     # Set the random seeds
     rng = Xoshiro(rgn_seed)
@@ -32,14 +32,16 @@ function GRAND_sim(
     y_demod = Vector{Bool}(undef,N)
     gabarito = Vector{Bool}(undef,N)
     candidate = Vector{Bool}(undef,N)
-    err_loc_vec = zeros(Int,max_err_loc_vec_len)
+    err_loc_vec = zeros(Int,N)
 
     w = Vector{Bool}(undef,M)
 
     errors = 0
     trials = 0
 
-    Sum_syndromes = zeros(Int,max_err_loc_vec_len-1)
+    syndrome = zeros(Bool,N-K)
+
+    Sum_syndromes = zeros(Bool,M,N-1)
 
     if print
         err_vec = zeros(Bool,N)         # error vector
@@ -59,13 +61,7 @@ function GRAND_sim(
         cword[K+1:end] .= w
 
         # if print
-            syn = 0
-            for i in eachindex(cword)
-                if cword[i]
-                    syn ⊻= H_vec[i]
-                end
-            end
-            if syn != 0
+            if !iszero(H*cword)
                 throw(error(lazy"encoding error"))
             end
         # end
@@ -98,9 +94,7 @@ ________________________________________________________________________________
             print_test("True error Vector", gabarito)
         end
 
-        syn = fast_gf2_mat_mul(H_vec,y_demod)
-
-        # display(syn)
+        _gf2_mat_mult!(syndrome,H,y_demod)           # syndrome
 
         # If the code is even, then check the parity of the demod to decide
         # whether to query even or odd
@@ -122,13 +116,13 @@ ________________________________________________________________________________
         zerosym = false
 
         if test_zero_noise
-            zerosym = iszero(syn)
+            zerosym = iszero(syndrome)
         end
 
         err_loc_vec .= 0                
         
         if zerosym 
-            @turbo for i in eachindex(biterror)
+            @simd for i in eachindex(biterror)
                 biterror[i] = y_demod[i] ⊻ cword[i]
             end
         else      
@@ -144,17 +138,17 @@ ________________________________________________________________________________
                 candidate,
                 err_loc_vec,
                 err_loc_vec_len,
-                max_err_loc_vec_len,
+                max_query,
                 y_demod,
                 N,
-                syn,
-                H_vec,
+                syndrome,
+                H,
                 inc,
                 Sum_syndromes
             )
             
             # Calculate bit error
-            @turbo for i in eachindex(biterror)
+            @simd for i in eachindex(biterror)
                 biterror[i] = candidate[i] ⊻ cword[i]
             end
 
@@ -203,23 +197,3 @@ function print_test(
     end
     println()
 end 
-
-function fast_gf2_mat_mul(
-    int_vec::Vector{Int},
-    bool_vec::Vector{Bool}
-)
-
-    if length(int_vec) != length(bool_vec)
-        throw(error(lazy"dimensions must be equal"))
-    end
-
-    result = 0
-    for i in eachindex(int_vec)
-        if bool_vec[i]
-            result ⊻= int_vec[i]
-        end
-    end
-
-    return result
-
-end

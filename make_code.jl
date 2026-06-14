@@ -82,16 +82,16 @@ function CRC_code(
 
     hd, koopman_poly_hex, crc_poly = koopman_poly(N,K)
 
-    G = zeros(Bool,N,K)
+    P = zeros(Bool,N-K,K)
     u = [zeros(Bool,K-1); true]
     uu = zeros(Bool,N)
     for i =1:K
         uu[1:K] = circshift(u,i)
-        _,r = divide_poly(uu,crc_poly) 
-        G[:,i] = [uu[1:K];r]
+        _,r = gf2_divide_poly(uu,crc_poly) 
+        P[:,i] = r
     end
-    H = [G[K+1:end,:] I(N-K)]
+    H = [P I(N-K)]
 
-    return G, H, crc_poly, hd, koopman_poly_hex
+    return P, H, crc_poly, hd, koopman_poly_hex
 
 end
