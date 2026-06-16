@@ -1,131 +1,143 @@
+################################################################################
+# Allan Eduardo Feitosa
+# 15 Jun 2026
+# My implementation of the hard decision GRAND algorithm.
+
+# INPUTS:
+#
+# candidate             : the candidate transmitted codeword
+# err_loc_vec           : vector with the error locations 
+# max_err_loc_vec_len   : maximum length of err_loc_vec
+# code_len              : codeword length
+# syndrome              : the base 10 correspondent of the current syndrome
+# H_cols                : the base-10 integer correspondents of the columns of H
+# inc                   : increment size of the length of err_loc_vec (1 or 2)
+# Sum_H_cols            : sum of the columns of H
+
+# This function searches for the binary  vector noise 'w' such that 
+# H*w = syndrome.
+#
+# The indices were w are equal to 1 (true) are the error locations represented in
+# err_loc_vec.
+#
+# For performance, the columns of the parity-check matrix H are transformed to 
+# their corresponding base-10 integers and stored into the vector H_cols.
+# 
+# Since H*w = the sum of the columns of H corresponding to the indices where w
+# is equal 1, we use Sum_H_cols to store the sums of the columns of H. Each
+# index 'idx' of Sum_H_cols corresponds to the sum of the first 'idx' error
+# locations currently contained in err_loc_vec. 
+# Example, if err_loc_vec = [1,3,7,10,27], then
+# Sum_H_cols[1] = H_cols[1]
+# Sum_H_cols[2] = H_cols[1] ⊻ H_cols[3]              (⊻: xor operation)
+# Sum_H_cols[3] = H_cols[1] ⊻ H_cols[3] ⊻ H_cols[7]
+# Sum_H_cols[4] = H_cols[1] ⊻ H_cols[3] ⊻ H_cols[7] ⊻ H_cols[10]
+# Therefore, Sum_H_cols[idx] = Sum_H_cols[idx-1] ⊻ H_cols[err_loc_vec[idx]]
+#
+# Note that H_cols[27] is not added (see lines 74 and following below).  
+
 function hard_grand!(
     candidate::Vector{Bool},
     err_loc_vec::Vector{Int},
-    err_loc_vec_len::Int,
     max_err_loc_vec_len::Int,
-    y_demod::Vector{Bool}, 
-    N::Int,
+    code_len::Int,
     syndrome::Int,
-    H::Vector{Int},
+    H_cols::Vector{Int},
     inc::Int,
-    Sum_syndromes::Vector{Int}
+    Sum_H_cols::Vector{Int}
 )
 
-    start_index = 1
+    err_loc_vec_len = 2 # this function always starts with err_loc_vec = [1,2]
 
+    start_idx = 1 # the smaller index of err_loc_vec that has changed between updates
+    
     loop = true
 
     @inbounds @fastmath while loop
 
-        syn_flag = false
+        syn_flag = false          # indicates if the right noise guess was found
 
-        if err_loc_vec_len == 1  
-            for i=1:N   
-                h_column = H[i]
-                if h_column == syndrome
-                    syn_flag = true
-                    err_loc_vec[1] = i
-                    break
-                end
-            end
-        else
-            if start_index == 1
-                idx = err_loc_vec[1]
-                Sum_syndromes[1] = H[idx]
-                start_index += 1
-            end
-            if err_loc_vec_len > 2
-                for i in start_index:err_loc_vec_len-1
-                    idx = err_loc_vec[i]
-                    Sum_syndromes[i] = Sum_syndromes[i-1] ⊻ H[idx]
-                end
-            end
-            last_idx = err_loc_vec[err_loc_vec_len]
-            s_column = Sum_syndromes[err_loc_vec_len-1]
-            for i = last_idx:N
-                h_column = H[i]
-                syn = s_column ⊻ h_column  
-                if syn == syndrome
-                    syn_flag = true
-                    err_loc_vec[err_loc_vec_len] = i
-                    break
-                end
+        # We must add the column values of H according to the error locations.
+        if start_idx == 1
+            # i.e., if all indices of err_loc_vec have changed, then we must 
+            # change the value stored at Sum_H_cols[1]
+            Sum_H_cols[1] = H_cols[err_loc_vec[1]]
+            start_idx = 2
+        end
+        if err_loc_vec_len > 2
+            # add the columns of H and stores in Sum_H_cols accordingly
+            for idx in start_idx:(err_loc_vec_len-1)
+                Sum_H_cols[idx] = Sum_H_cols[idx-1] ⊻ H_cols[err_loc_vec[idx]]
             end
         end
 
-        if syn_flag
-            candidate .= y_demod
-            for i in err_loc_vec
-                if i == 0
-                    break
-                end
-                candidate[i] ⊻= true
-            end
-            return true
-        else
-            err_loc_vec[err_loc_vec_len] = N
-            err_loc_vec_len, start_index, loop = increase_error!(err_loc_vec,err_loc_vec_len,max_err_loc_vec_len,inc,N)
-        end      
-
-    end
-
-    return false
-    
-end
-
-# This function generates the next error location vector given the previous one
-
-function increase_error!(
-    err_loc_vec::Vector{Int},
-    err_loc_vec_len::Int,
-    max_err_loc_vec_len::Int,
-    inc::Int,
-    N::Int
-)
-
-    inbounds = false
-
-    start_index = 1
-
-    @inbounds @fastmath begin
-    
-        for i = err_loc_vec_len-1:-1:1
-
-            inbounds = true
-            index = err_loc_vec[i]
-            err_loc_vec[i] = index + 1
-            i_p = i + 1
-            offset = index - i + 1
-            for j = i_p : err_loc_vec_len
-                new_index = offset + j
-                if new_index ≤ N
-                    err_loc_vec[j] = new_index
-                else
-                    inbounds = false
-                    break
-                end
-            end
-            if inbounds
-                start_index = i
+        # Finally, we add the column of H corresponding to the last error
+        # location, and compares the result with the syndrome
+        last_loc = err_loc_vec[err_loc_vec_len]
+        sum_H_cols = Sum_H_cols[err_loc_vec_len-1]
+        for i in last_loc:code_len
+            # we test all error locations from 'last_loc' until 'code_len'
+            syn = sum_H_cols ⊻ H_cols[i]  
+            if syn == syndrome
+                err_loc_vec[err_loc_vec_len] = i
+                syn_flag = true
                 break
             end
         end
 
-        if !inbounds
-            if err_loc_vec_len == N
-                err_loc_vec_len = 0
-                return err_loc_vec_len
+        if syn_flag 
+            # if the right noise guess was found, sum 1 at each error location
+            for idx in 1:err_loc_vec_len
+                candidate[err_loc_vec[idx]] ⊻= true
             end
-            err_loc_vec_len += inc      # increments the length of err_loc_vec
-            if err_loc_vec_len > max_err_loc_vec_len
-                return err_loc_vec_len, start_index, false
+            return true
+        else   
+            # updates err_loc_vec
+            
+            success = false             # if err_loc_vec was successfully updated
+            start_idx = 1
+            
+            # At this point, the last error location guess is always at 'code_len'.
+            # We must find the index of err_loc_vec from which we start tp update it.
+            # Example: if err_loc_vec = [1,3,5,62,63,64], and code_len = 64, then
+            # 1) from index = 5, the updated would result [1,3,5,62,64,65], which is not allowed
+            # 2) from index = 4, we have [1,3,5,63,64,65], again not allowed.
+            # 3) from index = 3, we have [1,3,6,7,8,9], which is the valid update.
+            # The routine below looks for this index, testing if the resulting 
+            # last error location is larger than code_len.
+
+            for idx = (err_loc_vec_len-1):(-1):1
+                new_loc = (err_loc_vec[idx] + 1) + (err_loc_vec_len - idx)
+                if new_loc > code_len
+                    continue
+                else
+                    success = true      # we found the index from which to start 
+                    # Next, we update err_loc_ vec from the last to the starting index
+                    for j = err_loc_vec_len:(-1):idx    
+                        err_loc_vec[j] = new_loc
+                        new_loc -= 1
+                    end
+                    start_idx = idx     # we need the starting index outside the for loop
+                    break
+                end
             end
-            @turbo for i = 1:err_loc_vec_len
-                err_loc_vec[i] = i
-            end        
+
+            if !success # if was not possible to update err_loc_vec with its current length            
+               
+                if err_loc_vec_len == max_err_loc_vec_len
+                    # then we must terminate simulation
+                    loop = false
+                else
+                    # then we increment the length of err_loc_vec and initiates it
+                    err_loc_vec_len += inc      
+                    for idx = 1:err_loc_vec_len
+                        err_loc_vec[idx] = idx
+                    end   
+                end     
+            end
         end
     end
 
-    return err_loc_vec_len, start_index, true
+    return false
     
 end

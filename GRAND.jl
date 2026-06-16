@@ -1,3 +1,8 @@
+################################################################################
+# Allan Eduardo Feitosa
+# 15 Jun 2026
+# Setup for GRAND algorithm decoding simulation
+
 using Random
 using LinearAlgebra
 using Plots
@@ -28,48 +33,53 @@ include("/home/allan/LDPC/Algorithms/Flooding.jl")
 
 SEED::Int = 1234
 
-KK = 32
-NN = 64
+KK::Int = 32
+NN::Int = 64
 
-MM = NN - KK
+MM::Int = NN - KK
 
-TEST = false
-PRINT = false
+TEST::Bool = false
+PRINT::Bool = false
 
-# PP, HH, CRC_POLY, HD, KOOPMAN_POLY_HEX = CRC_code(NN,KK)
-# sum_G = sum(PP,dims=1) .⊻ ones(Bool,KK)
+PROTOCOL::String = "CRC"
 
-#Generate Parity-Check Matrix by the PEG algorithm
+if PROTOCOL == "CRC"
+    #Generate Parity-Check Matrix by the PEG algorithm
 
-LAMBDA = [0.21, 0.25, 0.25, 0.29, 0]
-RO = [1.0, 0, 0, 0, 0, 0]
-H_PEG, GIRTH = PEG(LAMBDA,RO,MM,NN)
-HH, LL, UU, FF = LU_encoding(H_PEG,0)
+    LAMBDA = [0.21, 0.25, 0.25, 0.29, 0]
+    RO = [1.0, 0, 0, 0, 0, 0]
+    H_PEG, GIRTH = PEG(LAMBDA,RO,MM,NN)
 
-PP = zeros(Bool,MM,KK)
+    HH, LL, UU, FF = LU_encoding(H_PEG,0)
 
-for k in axes(PP,2)
-    PP[:,k] = gf2_solve_LU(LL,UU,HH[:,k])
-end
+    PP = zeros(Bool,MM,KK)
 
-sum_G = ones(Bool,KK)
-for k in axes(PP,2)
-    for m in axes(PP,1)
-        sum_G[k] ⊻=  PP[m,k]
+    for k in axes(PP,2)
+        PP[:,k] = gf2_solve_LU(LL,UU,HH[:,k])
     end
+
+    sum_G = ones(Bool,KK)
+    for k in axes(PP,2)
+        for m in axes(PP,1)
+            sum_G[k] ⊻=  PP[m,k]
+        end
+    end
+elseif PROTOCOL == "CRC"
+    PP, HH, CRC_POLY, HD, KOOPMAN_POLY_HEX = CRC_code(NN,KK)
+    sum_G = sum(PP,dims=1) .⊻ ones(Bool,KK)
 end
 
-even_code = iszero(sum_G)
+EVEN_CODE = iszero(sum_G)
 
-if !even_code
+if !EVEN_CODE
     display("Not an even code!")
 end
 
 # GRAND
 
-MAX_ERRORS = 36*3
+MAX_ERRORS::Int = 3
 
-MAX_ERR_LOC_VEC_LEN = 7
+MAX_ERR_LOC_VEC_LEN::Int = NN
 
 EbN0 = [1.0, 1.5, 2.0, 2.5, 3.0]
 # EbN0 = [1.0]
@@ -96,15 +106,17 @@ FER = zeros(num_ebn0)
 
 ### testando ints
 
-H_vec = zeros(Int,NN)
+H_COLUMNS = zeros(Int,NN)
 
 for i in axes(HH,2)
     for j in axes(HH,1)
         if HH[j,i]
-            H_vec[i] += 2^(MM - j)
+            H_COLUMNS[i] += 2^(MM - j)
         end
     end
 end
+
+plotlyjs()
 
 if !TEST
     for k in eachindex(EbN0)
@@ -115,7 +127,8 @@ if !TEST
 
         stats = @timed Threads.@threads for i in 1:NTHREADS
 
-            errors, trials = GRAND_sim(MAX_ERRORS ÷ NTHREADS,PP,RGN_SEEDS[i],stdev,false,H_vec,even_code,MAX_ERR_LOC_VEC_LEN)
+
+            errors, trials = GRAND_sim(MAX_ERRORS,PP,RGN_SEEDS[i],stdev,false,H_COLUMNS,EVEN_CODE,MAX_ERR_LOC_VEC_LEN)
             # _,_,errors,_,trials = simcore(KK,NN,nothing,stdev,HH,PP,NC,NV,[0 0],"PEG",0,"Flooding","TANH",MAX_ERRORS,50,false,0,0.0,[1],0.0,RGN_SEEDS[i],false,false) 
             Trials[k,i] = trials
             Errors[k,i] = errors
@@ -130,13 +143,12 @@ if !TEST
         FER[k] /= Total_trials[k]
     end
 
-    plotlyjs()
     plot!(EbN0, log10.(FER),label="L=$MAX_ERR_LOC_VEC_LEN")
 else
     variance = exp10.(-EbN0[1]/10) / (2*RR)
     stdev = sqrt.(variance) 
-    # @benchmark GRAND_sim(1,$PP,$(RGN_SEEDS[1]),$stdev,$PRINT,$HH,$even_code) seconds = 30
-    @time errors, trials = GRAND_sim(1,PP,RGN_SEEDS[1],stdev,PRINT,H_vec,even_code,MAX_ERR_LOC_VEC_LEN)
+    # @benchmark GRAND_sim(1,$PP,$(RGN_SEEDS[1]),$stdev,$PRINT,$HH,$EVEN_CODE) seconds = 30
+    @time errors, trials = GRAND_sim(1,PP,RGN_SEEDS[1],stdev,PRINT,H_COLUMNS,EVEN_CODE,5)
     display((errors, trials))
 
 end
