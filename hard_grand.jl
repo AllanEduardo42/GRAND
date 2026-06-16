@@ -7,6 +7,7 @@
 #
 # candidate             : the candidate transmitted codeword
 # err_loc_vec           : vector with the error locations 
+# err_loc_vec_len       : number of error locations in err_loc_vec
 # max_err_loc_vec_len   : maximum length of err_loc_vec
 # code_len              : codeword length
 # syndrome              : the base 10 correspondent of the current syndrome
@@ -39,6 +40,7 @@
 function hard_grand!(
     candidate::Vector{Bool},
     err_loc_vec::Vector{Int},
+    err_loc_vec_len::Int,
     max_err_loc_vec_len::Int,
     code_len::Int,
     syndrome::Int,
@@ -46,8 +48,6 @@ function hard_grand!(
     inc::Int,
     Sum_H_cols::Vector{Int}
 )
-
-    err_loc_vec_len = 2 # this function always starts with err_loc_vec = [1,2]
 
     start_idx = 1 # the smaller index of err_loc_vec that has changed between updates
     
@@ -73,10 +73,10 @@ function hard_grand!(
 
         # Finally, we add the column of H corresponding to the last error
         # location, and compares the result with the syndrome
-        last_loc = err_loc_vec[err_loc_vec_len]
+        last_err_loc = err_loc_vec[err_loc_vec_len]
         sum_H_cols = Sum_H_cols[err_loc_vec_len-1]
-        for i in last_loc:code_len
-            # we test all error locations from 'last_loc' until 'code_len'
+        for i in last_err_loc:code_len
+            # we test all error locations from 'last_err_loc' until 'code_len'
             syn = sum_H_cols ⊻ H_cols[i]  
             if syn == syndrome
                 err_loc_vec[err_loc_vec_len] = i
@@ -122,18 +122,18 @@ function hard_grand!(
                 end
             end
 
-            if !success # if was not possible to update err_loc_vec with its current length            
-               
-                if err_loc_vec_len == max_err_loc_vec_len
+            if !success # if was not possible to update err_loc_vec with its current length               
+                err_loc_vec_len += inc   
+                if err_loc_vec_len > max_err_loc_vec_len
                     # then we must terminate simulation
-                    loop = false
-                else
+                    loop = false 
+                else  
                     # then we increment the length of err_loc_vec and initiates it
-                    err_loc_vec_len += inc      
+                    # accordinly
                     for idx = 1:err_loc_vec_len
                         err_loc_vec[idx] = idx
                     end   
-                end     
+                end   
             end
         end
     end

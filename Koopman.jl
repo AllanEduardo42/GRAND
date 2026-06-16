@@ -18,7 +18,8 @@ function koopman_CRC_hex(n::Int, k::Int)
         offset = 28
 
         crc_matrix = [
-        #CRC            29         30         31         32   
+        #CRC            29         30         31         32 
+                0x16dfbf51 0x31342a2f 0x737e312b 0xad0424f3;  
                 0x16dfbf51 0x31342a2f 0x737e312b 0xad0424f3;
                 0x11c4dfb5 0x2254329d 0x52aa4332 0xc9d204f5;
                 0x1cf492f3 0x2adf3aaf 0x74f9e7cb 0xd419cc15;
@@ -54,7 +55,8 @@ function koopman_CRC_hex(n::Int, k::Int)
                         9         11         12         15;
                         8          9         11         13;
                         0          4          5          7;
-                        0          0          4          5
+                        0          0          4          5;
+                        0          0          0          0
         ]
     elseif CRC_size > 24
         offset = 24
@@ -115,9 +117,9 @@ function koopman_CRC_hex(n::Int, k::Int)
         length_matrix = [
         #CRC    17     18     19      20      21      22      23       24
             131054 262125 524268 1048555 2097130 4194281 8388584 16777191;
-            65518  131053 262124  524267 1048554 2097129 4194280  8388583;
-              240     493    494    1005    1004    2025    2026     4073;
-              240     240    494     494    1004    1004    2026     2026;
+             65518 131053 262124  524267 1048554 2097129 4194280  8388583;
+               240    493    494    1005    1004    2025    2026     4073;
+               240    240    494     494    1004    1004    2026     2026;
                 46     45     46      49     106     105     106      231;
                 22     45     45      45      48     105     105      105;
                  8     11     13      21      20      22      26       39;
@@ -153,14 +155,14 @@ function koopman_CRC_hex(n::Int, k::Int)
             0     0     0     0      0     0     0      0     0     0     0      0     5     6;
             0     0     0     0      0     0     0      0     0     0     0      0     0     5;
             0     0     0     0      0     0     0      0     0     0     0      0     0     0;
-        ]      
+        ]    
     else
         throw(error(lazy"CRC size must be greater than 2"))
     end
 
-    hd = find_hd(k,length_matrix,CRC_size,offset)
+    hd, i = find_hd(k,length_matrix,CRC_size,offset)
 
-    return hd, crc_matrix[hd-1,CRC_size-offset]
+    return hd, crc_matrix[i,CRC_size-offset]
 
 end
 
@@ -175,15 +177,15 @@ function find_hd(
     max_length = length_matrix[i,j]
 
     if k > max_length
-        return 2
+        return 2, 1
     else
         while max_length > 0
             i +=1
             max_length = length_matrix[i,j]
             if k > max_length
-                return i + 1
+                return i + 1, i
             end
         end
-        return i + 1
+        return i + 1, i
     end
 end

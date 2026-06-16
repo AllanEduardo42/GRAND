@@ -44,7 +44,7 @@ function GRAND_sim(
     candidate = Vector{Bool}(undef,code_len)
 
     # vector with the error locations
-    err_loc_vec = zeros(Int,max_err_loc_vec_len)
+    err_loc_vec = zeros(Int,max(3,max_err_loc_vec_len))
 
     # parity bits
     w = Vector{Bool}(undef,M)
@@ -58,7 +58,9 @@ function GRAND_sim(
         err_vec = zeros(Bool,code_len)         # error vector
     end
 
-    @fastmath @inbounds while min(errors,trials - errors) < max_errors
+    @inbounds @fastmath while min(errors,trials - errors) < max_errors
+
+        err_loc_vec .= 0
 
         decoded = false
         trials += 1
@@ -108,12 +110,12 @@ ________________________________________________________________________________
         # whether to query even or odd numbers of error locations; i,e., whether
         # length(err_loc_vec) is odd or even.
 
-        len_one = true # if or not the "one-error" noise guesses are performed
+        one_error = true # if or not to query "one-error" noises
         if even_code
             inc = 2     # Hamming weight increment
             if mod(sum(y_demod),2) == 0 
                 # this means that err_loc_vec_len ∈ {2,4,6,8,...}
-                len_one = false
+                one_error = false
             end
         else
             inc = 1
@@ -122,17 +124,19 @@ ________________________________________________________________________________
         ### 4) noise guessing
 
         # The first noise guess is the "all-zeros" noise
-        candidate .= y_demod            
-        err_loc_vec .= 0   
+        candidate .= y_demod               
         syndrome = fast_gf2_mat_mul(H_cols,candidate)
-        zerosyn = iszero(syndrome)        
+        zerosyn = iszero(syndrome)
         
+        # Unless the code is even and we query only an even number of errors,
+        # the next step is to search "one-error" noises.
         if !zerosyn
-            if len_one
+            if one_error
                 # In the case where there is only one error, just look at the 
                 # column values of H.
                 for i in 1:code_len
                     if H_cols[i] == syndrome
+                        err_loc_vec[1] = i
                         candidate[i] ⊻= true
                         zerosyn = true
                         break
@@ -142,19 +146,33 @@ ________________________________________________________________________________
         end                    
 
         if !zerosyn
-            # The "hard_grand" function starts with err_loc_vec = [1,2]
-            err_loc_vec[1] = 1
+
+            # The next noise guesses are the "two-errors" noises
+            err_loc_vec[1] = 1          # err_loc_vec = [1,2]
             err_loc_vec[2] = 2
-            zerosyn = hard_grand!(
-                candidate,
-                err_loc_vec,
-                max_err_loc_vec_len,
-                code_len,
-                syndrome,
-                H_cols,
-                inc,
-                Sum_H_cols
-            )
+            err_loc_vec_len = 2
+
+            # If the code is even and we query only an odd number of errors,
+            # skip to "three-errors" noises.
+            if even_code && one_error
+                err_loc_vec[3] = 3      # err_loc_vec = [1,2,3]
+                err_loc_vec_len = 3
+            end
+
+            if err_loc_vec_len ≤ max_err_loc_vec_len
+
+                zerosyn = hard_grand!(
+                    candidate,
+                    err_loc_vec,
+                    err_loc_vec_len,
+                    max_err_loc_vec_len,
+                    code_len,
+                    syndrome,
+                    H_cols,
+                    inc,
+                    Sum_H_cols
+                )
+            end
         end
             
         ### 5) Calculate bit error and verify decoding
@@ -173,15 +191,20 @@ ________________________________________________________________________________
         end  
 
         if print
-            err_vec .= false
-            for i in eachindex(err_loc_vec)
-                if err_loc_vec[i] == 0
-                    break
+            if zerosyn
+                err_vec .= false
+                for i in eachindex(err_loc_vec)
+                    if err_loc_vec[i] == 0
+                        break
+                    end
+                    err_vec[err_loc_vec[i]] = true
                 end
-                err_vec[err_loc_vec[i]] = true
+                print_test("Estimated Error Vector", err_vec)      
+                print_test("Bit Error",biterror)
+            else
+                println()
+                println("No noise candidate have been found!")
             end
-            print_test("Estimated Error Vector", err_vec)      
-            print_test("Bit Error",biterror)
         end      
 
     end

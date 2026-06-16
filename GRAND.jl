@@ -43,7 +43,7 @@ PRINT::Bool = false
 
 PROTOCOL::String = "CRC"
 
-if PROTOCOL == "CRC"
+if PROTOCOL == "PEG"
     #Generate Parity-Check Matrix by the PEG algorithm
 
     LAMBDA = [0.21, 0.25, 0.25, 0.29, 0]
@@ -58,18 +58,15 @@ if PROTOCOL == "CRC"
         PP[:,k] = gf2_solve_LU(LL,UU,HH[:,k])
     end
 
-    sum_G = ones(Bool,KK)
-    for k in axes(PP,2)
-        for m in axes(PP,1)
-            sum_G[k] ⊻=  PP[m,k]
-        end
-    end
 elseif PROTOCOL == "CRC"
+
     PP, HH, CRC_POLY, HD, KOOPMAN_POLY_HEX = CRC_code(NN,KK)
-    sum_G = sum(PP,dims=1) .⊻ ones(Bool,KK)
+
 end
 
-EVEN_CODE = iszero(sum_G)
+sum_P = iseven.(sum(PP,dims=1))
+
+EVEN_CODE = iszero(sum_P)
 
 if !EVEN_CODE
     display("Not an even code!")
@@ -148,7 +145,7 @@ else
     variance = exp10.(-EbN0[1]/10) / (2*RR)
     stdev = sqrt.(variance) 
     # @benchmark GRAND_sim(1,$PP,$(RGN_SEEDS[1]),$stdev,$PRINT,$HH,$EVEN_CODE) seconds = 30
-    @time errors, trials = GRAND_sim(1,PP,RGN_SEEDS[1],stdev,PRINT,H_COLUMNS,EVEN_CODE,5)
+    @time errors, trials = GRAND_sim(1,PP,RGN_SEEDS[1],stdev,PRINT,H_COLUMNS,EVEN_CODE,2)
     display((errors, trials))
 
 end

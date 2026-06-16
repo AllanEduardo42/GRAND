@@ -80,12 +80,17 @@ function CRC_code(
     K::Int
 )
 
+    if N < K
+        throw(error(lazy"N must be greater than K"))
+    end
+
     hd, koopman_poly_hex, crc_poly = koopman_poly(N,K)
 
     P = zeros(Bool,N-K,K)
     u = [zeros(Bool,K-1); true]
     uu = zeros(Bool,N)
-    for i =1:K
+
+    for i in 1:K
         uu[1:K] = circshift(u,i)
         _,r = gf2_divide_poly(uu,crc_poly) 
         P[:,i] = r
