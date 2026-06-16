@@ -74,7 +74,7 @@ end
 
 # GRAND
 
-MAX_ERRORS::Int = 3
+MAX_ERRORS::Int = 4
 
 MAX_ERR_LOC_VEC_LEN::Int = NN
 
