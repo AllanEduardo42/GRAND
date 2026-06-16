@@ -55,8 +55,8 @@ function hard_grand!(
     if err_loc_vec_len == 1
         # In the case where there is only one error, just look at the 
         # column values of H.
-        for i in 1:code_len
-            if H_cols[i] == syndrome
+        @inbounds @fastmath for i in 1:code_len
+            if H_cols[i] == syndrome    # i.e., we found the "one-error" noise guess
                 err_loc_vec[1] = i
                 candidate[i] ⊻= true
                 return true
