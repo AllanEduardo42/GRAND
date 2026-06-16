@@ -49,6 +49,31 @@ function hard_grand!(
     Sum_H_cols::Vector{Int}
 )
 
+    # Unless the code is even and we query only an even number of errors,
+    # the next step is to search "one-error" noises.
+    
+    if err_loc_vec_len == 1
+        # In the case where there is only one error, just look at the 
+        # column values of H.
+        for i in 1:code_len
+            if H_cols[i] == syndrome
+                err_loc_vec[1] = i
+                candidate[i] ⊻= true
+                return true
+            end
+        end
+        # Jump to the "two-errors" noise guesses
+        err_loc_vec[1] = 1
+        err_loc_vec[2] = 2
+        err_loc_vec_len = 2
+        if inc == 2
+            # if the code is even and we query only an odd number of errors,
+            # skip to the "three-errors" noises.
+            err_loc_vec[3] = 3
+            err_loc_vec_len = 3
+        end                       
+    end    
+
     start_idx = 1 # the smaller index of err_loc_vec that has changed between updates
     
     loop = true
@@ -62,13 +87,11 @@ function hard_grand!(
             # i.e., if all indices of err_loc_vec have changed, then we must 
             # change the value stored at Sum_H_cols[1]
             Sum_H_cols[1] = H_cols[err_loc_vec[1]]
-            start_idx = 2
+            start_idx = 2   # the next index of Sum_H_cols to update       
         end
-        if err_loc_vec_len > 2
-            # add the columns of H and stores in Sum_H_cols accordingly
-            for idx in start_idx:(err_loc_vec_len-1)
-                Sum_H_cols[idx] = Sum_H_cols[idx-1] ⊻ H_cols[err_loc_vec[idx]]
-            end
+        # add the columns of H and stores in Sum_H_cols accordingly
+        for idx in start_idx:(err_loc_vec_len-1)
+            Sum_H_cols[idx] = Sum_H_cols[idx-1] ⊻ H_cols[err_loc_vec[idx]]
         end
 
         # Finally, we add the column of H corresponding to the last error

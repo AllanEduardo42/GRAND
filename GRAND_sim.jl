@@ -44,7 +44,7 @@ function GRAND_sim(
     candidate = Vector{Bool}(undef,code_len)
 
     # vector with the error locations
-    err_loc_vec = zeros(Int,max(3,max_err_loc_vec_len))
+    err_loc_vec = zeros(Int,max(2,max_err_loc_vec_len))
 
     # parity bits
     w = Vector{Bool}(undef,M)
@@ -82,7 +82,7 @@ function GRAND_sim(
         randn!(rng,signal)              # put the noise in the vector 'signal'
         lmul!(stdev,signal)             # multiply by the standard deviation
 
-        @simd for i in eachindex(cword)
+        for i in eachindex(cword)
             u = 1 - 2*cword[i]  
             signal[i] += u                  # sum the modulated signal to the noise              
             y_demod[i] = signbit(signal[i]) # demodulated signal
@@ -100,7 +100,7 @@ ________________________________________________________________________________
             print_test("Codeword",cword)
             print_test("Demodulated",y_demod)
              # True error vector
-            @simd for i in eachindex(true_err_vec)
+            for i in eachindex(true_err_vec)
                 true_err_vec[i] = cword[i] ⊻ y_demod[i]
             end
             print_test("True error Vector", true_err_vec)
@@ -110,12 +110,12 @@ ________________________________________________________________________________
         # whether to query even or odd numbers of error locations; i,e., whether
         # length(err_loc_vec) is odd or even.
 
-        one_error = true # if or not to query "one-error" noises
+        even_errors = false # if or not to query "one-error" noises
         if even_code
             inc = 2     # Hamming weight increment
             if mod(sum(y_demod),2) == 0 
                 # this means that err_loc_vec_len ∈ {2,4,6,8,...}
-                one_error = false
+                even_errors = true
             end
         else
             inc = 1
@@ -126,37 +126,19 @@ ________________________________________________________________________________
         # The first noise guess is the "all-zeros" noise
         candidate .= y_demod               
         syndrome = fast_gf2_mat_mul(H_cols,candidate)
-        zerosyn = iszero(syndrome)
-        
-        # Unless the code is even and we query only an even number of errors,
-        # the next step is to search "one-error" noises.
-        if !zerosyn
-            if one_error
-                # In the case where there is only one error, just look at the 
-                # column values of H.
-                for i in 1:code_len
-                    if H_cols[i] == syndrome
-                        err_loc_vec[1] = i
-                        candidate[i] ⊻= true
-                        zerosyn = true
-                        break
-                    end
-                end                
-            end
-        end                    
+        zerosyn = iszero(syndrome)                 
 
         if !zerosyn
 
-            # The next noise guesses are the "two-errors" noises
-            err_loc_vec[1] = 1          # err_loc_vec = [1,2]
-            err_loc_vec[2] = 2
-            err_loc_vec_len = 2
+            # The next noise guesses are the "one-error" noises
+            err_loc_vec[1] = 1          
+            err_loc_vec_len = 1
 
-            # If the code is even and we query only an odd number of errors,
-            # skip to "three-errors" noises.
-            if even_code && one_error
-                err_loc_vec[3] = 3      # err_loc_vec = [1,2,3]
-                err_loc_vec_len = 3
+            # If the code is even and we query only an even number of errors,
+            # skip to "two-errors" noises.
+            if even_code && even_errors
+                err_loc_vec[2] = 2      # err_loc_vec = [1,2]
+                err_loc_vec_len = 2
             end
 
             if err_loc_vec_len ≤ max_err_loc_vec_len
@@ -176,7 +158,7 @@ ________________________________________________________________________________
         end
             
         ### 5) Calculate bit error and verify decoding
-        @turbo for i in eachindex(biterror)
+        for i in eachindex(biterror)
             biterror[i] = candidate[i] ⊻ cword[i]
         end
 

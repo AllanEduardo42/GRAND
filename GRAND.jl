@@ -145,7 +145,7 @@ else
     variance = exp10.(-EbN0[1]/10) / (2*RR)
     stdev = sqrt.(variance) 
     # @benchmark GRAND_sim(1,$PP,$(RGN_SEEDS[1]),$stdev,$PRINT,$HH,$EVEN_CODE) seconds = 30
-    @time errors, trials = GRAND_sim(1,PP,RGN_SEEDS[1],stdev,PRINT,H_COLUMNS,EVEN_CODE,2)
+    @time errors, trials = GRAND_sim(3,PP,RGN_SEEDS[1],stdev,PRINT,H_COLUMNS,EVEN_CODE,10)
     display((errors, trials))
 
 end
