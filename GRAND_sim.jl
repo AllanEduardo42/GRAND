@@ -4,6 +4,7 @@
 # Core function to simulate the performance of the GRAND algorithm
 
 include("hard_grand.jl")
+include("auxiliary functions.jl")
 
 function GRAND_sim(
     max_errors::Int,
@@ -85,7 +86,7 @@ function GRAND_sim(
         for i in eachindex(cword)
             u = 1 - 2*cword[i]  
             signal[i] += u                  # sum the modulated signal to the noise              
-            y_demod[i] = signbit(signal[i]) # demodulated signal
+            y_demod[i] = signbit(signal[i]) # hard demodulated signal
         end
 
         if print
@@ -192,41 +193,5 @@ ________________________________________________________________________________
     end
 
     return errors, trials
-
-end
-
-function print_test(
-    text::String,
-    array::Vector{Bool}
-
-)    
-    println()
-    print("$text (L = $(length(array))):")
-    for i in eachindex(array)
-        if i%80 == 1
-            println()
-        end
-        print(Int(array[i]))
-    end
-    println()
-end 
-
-function fast_gf2_mat_mul(
-    int_vec::Vector{Int},
-    bool_vec::Vector{Bool}
-)
-
-    if length(int_vec) != length(bool_vec)
-        throw(error(lazy"dimensions must be equal"))
-    end
-
-    result = 0
-    for i in eachindex(int_vec)
-        if bool_vec[i]
-            result ⊻= int_vec[i]
-        end
-    end
-
-    return result
 
 end

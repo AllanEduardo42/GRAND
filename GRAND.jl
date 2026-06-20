@@ -23,6 +23,7 @@ include("Koopman.jl")
 include("../LDPC/GF2_functions.jl")
 include("make_code.jl")
 include("GRAND_sim.jl")
+include("ORBGRAND_sim.jl")
 include("calc_syndrome.jl")
 include("../LDPC/PEG.jl")
 include("../LDPC/LU_encoding.jl")
@@ -34,7 +35,7 @@ include("/home/allan/LDPC/Algorithms/Flooding.jl")
 SEED::Int = 1234
 
 KK::Int = 32
-NN::Int = 64
+NN::Int = 59
 
 MM::Int = NN - KK
 
@@ -74,7 +75,7 @@ end
 
 # GRAND
 
-MAX_ERRORS::Int = 4
+MAX_ERRORS::Int = 5
 
 MAX_ERR_LOC_VEC_LEN::Int = NN
 
@@ -124,11 +125,12 @@ if !TEST
 
         stats = @timed Threads.@threads for i in 1:NTHREADS
 
-
-            errors, trials = GRAND_sim(MAX_ERRORS,PP,RGN_SEEDS[i],stdev,false,H_COLUMNS,EVEN_CODE,MAX_ERR_LOC_VEC_LEN)
+            errors, trials = ORBGRAND_sim(MAX_ERRORS,PP,RGN_SEEDS[i],stdev,PRINT,H_COLUMNS,EVEN_CODE,typemax(Int))
+            # errors, trials = GRAND_sim(MAX_ERRORS,PP,RGN_SEEDS[i],stdev,false,H_COLUMNS,EVEN_CODE,MAX_ERR_LOC_VEC_LEN)
             # _,_,errors,_,trials = simcore(KK,NN,nothing,stdev,HH,PP,NC,NV,[0 0],"PEG",0,"Flooding","TANH",MAX_ERRORS,50,false,0,0.0,[1],0.0,RGN_SEEDS[i],false,false) 
             Trials[k,i] = trials
             Errors[k,i] = errors
+            # Errors[k,i] = errors[end]
 
         end
         str = """Elapsed $(round(stats.time;digits=1)) seconds ($(round(stats.gctime/stats.time*100;digits=2))% gc time, $(round(stats.compile_time/stats.time*100,digits=2))% compilation time)"""
@@ -145,7 +147,9 @@ else
     variance = exp10.(-EbN0[1]/10) / (2*RR)
     stdev = sqrt.(variance) 
     # @benchmark GRAND_sim(1,$PP,$(RGN_SEEDS[1]),$stdev,$PRINT,$HH,$EVEN_CODE) seconds = 30
-    @time errors, trials = GRAND_sim(3,PP,RGN_SEEDS[1],stdev,PRINT,H_COLUMNS,EVEN_CODE,10)
-    display((errors, trials))
+    # @time errors, trials = GRAND_sim(3,PP,RGN_SEEDS[1],stdev,PRINT,H_COLUMNS,EVEN_CODE,10)
+    @time @profview errors, trials = ORBGRAND_sim(2,PP,RGN_SEEDS[1],stdev,PRINT,H_COLUMNS,EVEN_CODE,typemax(Int))
+    display((trials, errors))
+    # @benchmark ORBGRAND_sim(1,$PP,$(RGN_SEEDS[1]),$stdev,$PRINT,$H_COLUMNS,$EVEN_CODE,typemax(Int)) seconds = 30
 
 end
