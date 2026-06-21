@@ -11,15 +11,14 @@ function ORBGRAND_sim(
     P::Matrix{Bool},
     rgn_seed::Int,
     stdev::Float64,
-    print::Bool,
+    printtest::Bool,
     H_cols::Vector{Int},
     even_code::Bool,
-    max_query::Int
+    max_query::Int,
+    abandon::Bool
 )
 
     M,K = size(P)
-
-    variance = stdev^2
 
     code_len = M + K
 
@@ -40,12 +39,8 @@ function ORBGRAND_sim(
     # received signal
     signal = Vector{Float64}(undef,code_len)
 
-    # LLR's
-    llr = Vector{Float64}(undef,code_len)
-    abs_llr = Vector{Float64}(undef,code_len)
-
-    # prior belief that the demodulated bit is in error
-    prob_demod = Vector{Float64}(undef,code_len)
+    # absolute values of the signal
+    abs_signal = Vector{Float64}(undef,code_len)
 
     # demodulated signal
     y_demod = Vector{Bool}(undef,code_len)
@@ -62,23 +57,17 @@ function ORBGRAND_sim(
     errors = 0
     trials = 0
 
-    err_vec = zeros(Bool,code_len)         # error vector
+    err_vec = zeros(Bool,code_len)              # error vector
 
-    err_vec_perm = zeros(Bool,code_len)
+    err_loc_vec = Vector{Int}(undef,code_len)   # error location vector
 
-    u = Vector{Int}(undef,code_len)
+    partition_vec = Vector{Int}(undef,code_len) # partition vector
 
-    err_loc_vec = Vector{Int}(undef,code_len)
+    cum_drops = Vector{Int}(undef,code_len)     # accumulated drops
 
-    cum_drops = Vector{Int}(undef,code_len)
+    sorted_ind = Vector{Int}(undef,code_len)    # sorted indices
 
-    idx_order = Vector{Int}(undef,code_len)
-
-    inv_perm = Vector{Int}(undef,code_len)
-
-    sorted_abs_LLR = Vector{Float64}(undef,code_len)
-
-    test_H_cols = Vector{Int}(undef,code_len)
+    sorted_H_cols = Vector{Int}(undef,code_len)
 
     @inbounds @fastmath while min(errors,trials - errors) < max_errors
 
@@ -106,14 +95,12 @@ function ORBGRAND_sim(
 
         for i in eachindex(cword)
             bpsk = 1 - 2*cword[i]  
-            signal[i] += bpsk                  # sum the modulated signal to the noise   
-            llr[i] = 2*signal[i]/variance   # LLR for soft demodulation  
-            abs_llr[i] = abs(llr[i]) 
-            prob_demod[i] = exp(-abs_llr[i])/(1 + exp(-abs_llr[i]))
+            signal[i] += bpsk                  # sum the modulated signal to the noise     
+            abs_signal[i] = abs(signal[i]) 
             y_demod[i] = signbit(signal[i]) # hard demodulated signal
         end
 
-        if print
+        if printtest
             println("""
 ________________________________________________________________________________
 
@@ -155,46 +142,35 @@ ________________________________________________________________________________
         syndrome = fast_gf2_mat_mul(H_cols,candidate)
         zerosyn = iszero(syndrome)   
 
-        if !zerosyn
+        if !zerosyn && (!abandon || max_query > 1)
 
-            sortperm!(idx_order,abs_llr)
-            for i in eachindex(idx_order)
-                sorted_abs_LLR[i] = abs_llr[idx_order[i]] 
-            end
-
-            # Inverse sort order
-            for i in eachindex(idx_order)
-                inv_perm[idx_order[i]] = i   
-            end
+            sortperm!(sorted_ind,abs_signal)
 
             # This is the H columns reordered to put in ML order
-            for i in eachindex(idx_order)
-                test_H_cols[i] = H_cols[idx_order[i]]
+            for i in eachindex(sorted_ind)
+                sorted_H_cols[i] = H_cols[sorted_ind[i]]
             end
 
-            u .= 0
+            partition_vec .= 0
             cum_drops .= 0
             
             zerosyn, w = basic_ORBGRAND!(
                 err_loc_vec,
-                u,
+                partition_vec,
                 code_len,
                 syndrome,
-                test_H_cols,
+                sorted_H_cols,
                 max_query,
                 upper_bound,
                 cum_drops,
                 inc,
-                w_init
+                w_init,
+                abandon
             )
 
             if zerosyn
-                err_vec_perm .= false
                 for i in 1:w
-                    err_vec_perm[err_loc_vec[i]] = true
-                end
-                for i in eachindex(err_vec)
-                    err_vec[i] = err_vec_perm[inv_perm[i]]
+                    err_vec[sorted_ind[err_loc_vec[i]]] = true
                 end
                 candidate .⊻= err_vec
             end
@@ -215,9 +191,9 @@ ________________________________________________________________________________
             errors += 1
         end  
 
-        if print
+        if printtest
             if zerosyn
-                print_test("Estimated Error Vector", err_vec)      
+                print_test("Estimated Error Vector", err_vec)
                 print_test("Bit Error",biterror)
             else
                 println()

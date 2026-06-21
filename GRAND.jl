@@ -35,12 +35,12 @@ include("/home/allan/LDPC/Algorithms/Flooding.jl")
 SEED::Int = 1234
 
 KK::Int = 32
-NN::Int = 58
+NN::Int = 56
 
 MM::Int = NN - KK
 
 TEST::Bool = false
-PRINT::Bool = true
+PRINT::Bool = false
 
 PROTOCOL::String = "CRC"
 
@@ -76,6 +76,9 @@ end
 # GRAND
 
 MAX_ERRORS::Int = 5
+
+ABANDON::Bool = false
+MAX_QUERY::Int = 2
 
 MAX_ERR_LOC_VEC_LEN::Int = NN
 
@@ -126,7 +129,7 @@ if !TEST
 
         stats = @timed Threads.@threads for i in 1:NTHREADS
 
-            errors, trials = ORBGRAND_sim(MAX_ERRORS,PP,RGN_SEEDS[i],stdev,PRINT,H_COLUMNS,EVEN_CODE,typemax(Int))
+            errors, trials = ORBGRAND_sim(MAX_ERRORS,PP,RGN_SEEDS[i],stdev,PRINT,H_COLUMNS,EVEN_CODE,MAX_QUERY,ABANDON)
             # errors, trials = GRAND_sim(MAX_ERRORS,PP,RGN_SEEDS[i],stdev,false,H_COLUMNS,EVEN_CODE,MAX_ERR_LOC_VEC_LEN)
             # _,_,errors,_,trials = simcore(KK,NN,nothing,stdev,HH,PP,NC,NV,[0 0],"PEG",0,"Flooding","TANH",MAX_ERRORS,50,false,0,0.0,[1],0.0,RGN_SEEDS[i],false,false) 
             Trials[k,i] = trials
@@ -150,11 +153,10 @@ else
     # @benchmark GRAND_sim(1,$PP,$(RGN_SEEDS[1]),$stdev,$PRINT,$HH,$EVEN_CODE) seconds = 30
     # @time errors, trials = GRAND_sim(3,PP,RGN_SEEDS[1],stdev,PRINT,H_COLUMNS,EVEN_CODE,10)
     if PRINT
-        errors, trials = ORBGRAND_sim(2,PP,RGN_SEEDS[1],stdev,PRINT,H_COLUMNS,EVEN_CODE,typemax(Int))
+        errors, trials = ORBGRAND_sim(10,PP,RGN_SEEDS[1],stdev,PRINT,H_COLUMNS,EVEN_CODE,MAX_QUERY,ABANDON)
     else
-        @time errors, trials = ORBGRAND_sim(2,PP,RGN_SEEDS[1],stdev,PRINT,H_COLUMNS,EVEN_CODE,typemax(Int))
+        @time errors, trials = ORBGRAND_sim(10,PP,RGN_SEEDS[1],stdev,PRINT,H_COLUMNS,EVEN_CODE,MAX_QUERY,ABANDON)
     end
     display((trials, errors))
-    # @benchmark ORBGRAND_sim(1,$PP,$(RGN_SEEDS[1]),$stdev,$PRINT,$H_COLUMNS,$EVEN_CODE,typemax(Int)) seconds = 30
-
+    # @benchmark ORBGRAND_sim(1,$PP,$(RGN_SEEDS[1]),$stdev,$PRINT,$H_COLUMNS,$EVEN_CODE,$MAX_QUERY,$ABANDON) seconds = 30
 end
