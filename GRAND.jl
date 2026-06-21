@@ -35,12 +35,12 @@ include("/home/allan/LDPC/Algorithms/Flooding.jl")
 SEED::Int = 1234
 
 KK::Int = 32
-NN::Int = 59
+NN::Int = 58
 
 MM::Int = NN - KK
 
 TEST::Bool = false
-PRINT::Bool = false
+PRINT::Bool = true
 
 PROTOCOL::String = "CRC"
 
@@ -117,6 +117,7 @@ end
 plotlyjs()
 
 if !TEST
+    PRINT = false
     for k in eachindex(EbN0)
 
         # transform EbN0 in standard deviations
@@ -148,7 +149,11 @@ else
     stdev = sqrt.(variance) 
     # @benchmark GRAND_sim(1,$PP,$(RGN_SEEDS[1]),$stdev,$PRINT,$HH,$EVEN_CODE) seconds = 30
     # @time errors, trials = GRAND_sim(3,PP,RGN_SEEDS[1],stdev,PRINT,H_COLUMNS,EVEN_CODE,10)
-    @time @profview errors, trials = ORBGRAND_sim(2,PP,RGN_SEEDS[1],stdev,PRINT,H_COLUMNS,EVEN_CODE,typemax(Int))
+    if PRINT
+        errors, trials = ORBGRAND_sim(2,PP,RGN_SEEDS[1],stdev,PRINT,H_COLUMNS,EVEN_CODE,typemax(Int))
+    else
+        @time errors, trials = ORBGRAND_sim(2,PP,RGN_SEEDS[1],stdev,PRINT,H_COLUMNS,EVEN_CODE,typemax(Int))
+    end
     display((trials, errors))
     # @benchmark ORBGRAND_sim(1,$PP,$(RGN_SEEDS[1]),$stdev,$PRINT,$H_COLUMNS,$EVEN_CODE,typemax(Int)) seconds = 30
 

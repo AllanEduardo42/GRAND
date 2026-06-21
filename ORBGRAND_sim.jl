@@ -3,9 +3,7 @@
 # 15 Jun 2026
 # Core function to simulate the performance of the ORBGRAND algorithm
 
-# include("soft_GRAND_old_1.jl")
-# include("soft_GRAND_old_2.jl")
-include("soft_GRAND.jl")
+include("basic_ORBGRAND.jl")
 include("auxiliary functions.jl")
 
 function ORBGRAND_sim(
@@ -27,8 +25,6 @@ function ORBGRAND_sim(
 
     # ORBGRAND constants
     upper_bound = code_len*(code_len+1)÷2   # logistic weight W ≤ upper_bound
-    b = (1+2*(code_len))/2                  # hamming weight w = max(1,ceil(Int,(b-sqrt(bb - 2*W))))
-    bb = b^2
 
     # Set the random seeds
     rng = Xoshiro(rgn_seed)
@@ -60,31 +56,21 @@ function ORBGRAND_sim(
     # found hard decision candidate
     candidate = Vector{Bool}(undef,code_len)
 
-    # vector with the error locations
-    # err_loc_vec = zeros(Int,max(2,max_err_loc_vec_len))
-
     # parity bits
     parity_bits = Vector{Bool}(undef,M)
 
     errors = 0
     trials = 0
 
-    # Sum_H_cols = zeros(Int,max_err_loc_vec_len-1)
-
-
     err_vec = zeros(Bool,code_len)         # error vector
 
     err_vec_perm = zeros(Bool,code_len)
-
-    max_seq = 3000000
-
-    # noise_locations = zeros(Int,code_len,max_seq)
 
     u = Vector{Int}(undef,code_len)
 
     err_loc_vec = Vector{Int}(undef,code_len)
 
-    D = Vector{Int}(undef,code_len)
+    cum_drops = Vector{Int}(undef,code_len)
 
     idx_order = Vector{Int}(undef,code_len)
 
@@ -96,7 +82,7 @@ function ORBGRAND_sim(
 
     @inbounds @fastmath while min(errors,trials - errors) < max_errors
 
-        # err_loc_vec .= 0
+        err_loc_vec .= false
 
         decoded = false
         trials += 1
@@ -127,9 +113,6 @@ function ORBGRAND_sim(
             y_demod[i] = signbit(signal[i]) # hard demodulated signal
         end
 
-        # pG1 = prod(1 .- prob_demod)
-        # sPG = 0.0
-
         if print
             println("""
 ________________________________________________________________________________
@@ -152,16 +135,16 @@ ________________________________________________________________________________
         # whether to query even or odd numbers of error locations; i,e., whether
         # length(err_loc_vec) is odd or even.
 
-        even_errors = false # if or not to query "one-error" noises
-        demod_parity = mod(sum(y_demod),2)
         if even_code
-            # prob_even = 0.5*(1 + prod(1 .- 2*prob_demod))
-            # if demod_parity == 0 
-                # this means that err_loc_vec_len ∈ {2,4,6,8,...}
-                # pG1 = pG1/prob_even
-            # else
-                # pG1 = pG1/(1 - prob_even)
-            # end
+            inc = 2
+            if reduce(xor,y_demod)
+                w_init = 1
+            else
+                w_init = 2
+            end
+        else
+            inc = 1
+            w_init = 1
         end  
 
         ### 4) noise guessing
@@ -171,31 +154,13 @@ ________________________________________________________________________________
         candidate .= y_demod               
         syndrome = fast_gf2_mat_mul(H_cols,candidate)
         zerosyn = iszero(syndrome)   
-        
-        # If the code is odd or code is even and it is an even error, the first
-        # query is the demod string
-        # if !even_code || (even_code && demod_parity == 0)
-        #     # Sum of the probability of guesses
-        #     sPG = pG1
-        #     pG = pG1
-        #     # First query is demodulated string     
-        #     if zerosyn
-        #         if even_code
-        #             APP = pG/(pG + (1 - sPG)*(2^K - 1)/(2^code_len - 1))
-        #         else
-        #             APP = pG/(pG + (1 - sPG)*(2^K - 1)/(2^(code_len-1) - 1))
-        #         end
-        #     end
-        # end
 
         if !zerosyn
 
             sortperm!(idx_order,abs_llr)
-            # sorted_abs_LLR = abs_llr[idx_order]
             for i in eachindex(idx_order)
                 sorted_abs_LLR[i] = abs_llr[idx_order[i]] 
             end
-            # p_demod_ordered = p_order[idx_order]
 
             # Inverse sort order
             for i in eachindex(idx_order)
@@ -203,27 +168,24 @@ ________________________________________________________________________________
             end
 
             # This is the H columns reordered to put in ML order
-            # test_H_cols = H_cols[idx_order]
             for i in eachindex(idx_order)
                 test_H_cols[i] = H_cols[idx_order[i]]
             end
 
             u .= 0
-            D .= 0
+            cum_drops .= 0
             
-            zerosyn, w = soft_grand!(
+            zerosyn, w = basic_ORBGRAND!(
                 err_loc_vec,
                 u,
                 code_len,
                 syndrome,
                 test_H_cols,
-                even_code,
-                demod_parity,
                 max_query,
                 upper_bound,
-                b,
-                bb,
-                D
+                cum_drops,
+                inc,
+                w_init
             )
 
             if zerosyn
@@ -255,13 +217,6 @@ ________________________________________________________________________________
 
         if print
             if zerosyn
-                # err_vec .= false
-                # for i in eachindex(err_loc_vec)
-                #     if err_loc_vec[i] == 0
-                #         break
-                #     end
-                #     err_vec[err_loc_vec[i]] = true
-                # end
                 print_test("Estimated Error Vector", err_vec)      
                 print_test("Bit Error",biterror)
             else
