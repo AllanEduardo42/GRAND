@@ -20,7 +20,11 @@ function ORBGRAND_sim(
     max_query::Int,
     abandon::Bool,
     full::Bool,
-    max_depth::Int
+    max_depth::Int,
+    mean::Bool,
+    anchors_mean::Vector{Int},
+    offsets_mean::Vector{Int},
+    slopes_mean::Vector{Int}
 )
 
     M,K = size(P)
@@ -77,16 +81,25 @@ function ORBGRAND_sim(
 
     sorted_abs_signal = Vector{Float64}(undef,code_len)
 
-    if full        
-        anchors = Vector{Int}(undef,3)
-        offsets = Vector{Int}(undef,2)
-        alphas = Vector{Float64}(undef,2)
-        slopes = Vector{Int}(undef,2)
+    if full  
         err_loc_vecs_1 = zeros(Int,code_len,max_depth)
         err_loc_vecs_2 = zeros(Int,code_len,max_depth)
         W_lens = zeros(Int,2)
         Ranges = Matrix{StepRange{Int,Int}}(undef,W_upper_bound,2)
         W_list = Matrix{Int}(undef,W_upper_bound,2)
+        if !mean      
+            anchors = Vector{Int}(undef,3)
+            offsets = Vector{Int}(undef,2)
+            alphas = Vector{Float64}(undef,2)
+            slopes = Vector{Int}(undef,2)
+        else
+            anchors = copy(anchors_mean)
+            offsets = copy(offsets_mean)
+            slopes = copy(slopes_mean)
+            W_list .= 0
+            find_valid_logistic_weights!(W_list,W_lens,Ranges,anchors,offsets,
+                                                        slopes,W_upper_bound,2)
+        end        
     end
 
     @inbounds @fastmath while min(errors,trials - errors) < max_errors
@@ -164,7 +177,7 @@ ________________________________________________________________________________
 
         if !zerosyn && (!abandon || max_query > 1)
 
-            sortperm!(sorted_ind,abs_signal)
+            sortperm!(sorted_ind,abs_signal,alg=QuickSort)
 
             # This is the H columns reordered to put in ML order
             for i in eachindex(sorted_ind)
@@ -194,23 +207,13 @@ ________________________________________________________________________________
             cum_drops .= 0
 
             if full
-                min_slope = line_segmentation!(anchors,offsets,slopes,alphas,
+                if !mean
+                    min_slope = line_segmentation!(anchors,offsets,slopes,alphas,
                                                 sorted_abs_signal,code_len,2)
-                # p = plot(sorted_abs_signal/min_slope)
-                # for i in 1:2
-                #     if i == 1
-                #         j_vec = collect(anchors[i]:anchors[i+1])
-                #     else
-                #         j_vec = collect((anchors[i]+1):anchors[i+1])
-                #     end
-                #     segment = offsets[i] .+ (j_vec .- anchors[i])*slopes[i]
-                #     plot!(p,j_vec,segment, lw = 2, color = 2)
-                # end
-                # display(p)
-                W_list .= 0
-                find_valid_logistic_weights!(W_list,W_lens,Ranges,anchors,offsets,
-                                                        slopes,W_upper_bound,2)
-                
+                    W_list .= 0
+                    find_valid_logistic_weights!(W_list,W_lens,Ranges,anchors,offsets,
+                                                            slopes,W_upper_bound,2)
+                end                
 
                 # display(W_list)
 
@@ -222,10 +225,6 @@ ________________________________________________________________________________
                 #     display("slopes: ")
                 #     display(slopes')
                 # end
-
-                # err_loc_vecs_1 .= 0
-                # err_loc_vecs_2 .= 0
-
 
                 zerosyn, w = two_line_ORBGRAND!(
                     err_loc_vec,

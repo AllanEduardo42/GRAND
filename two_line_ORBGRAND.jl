@@ -58,13 +58,14 @@ function two_line_ORBGRAND!(
 
     s1 = slopes[1]
     s2 = slopes[2]
+
+    W1_len = W_lens[1] 
+    W2_len = W_lens[2]
     
     @inbounds @fastmath for W in 0:W_upper_bound
 
-        err_loc_vec .= 0
-
         # level 1 (first linear segment)
-        for k1 in 1:W_lens[1]  
+        for k1 in 1:W1_len
             W1 = W_list[k1,1]
             if W1 > W
                 break
@@ -72,7 +73,7 @@ function two_line_ORBGRAND!(
             W2 = W - W1         # W = W1 + W2
             k2 = 0
             found_W2 = false
-            for i in 1:W_lens[2]
+            for i in 1:W2_len
                 # search for W2 in the list of valid logistic weights
                 k2 += 1
                 inlist = W_list[i,2]

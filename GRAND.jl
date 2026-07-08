@@ -11,12 +11,13 @@ using SpecialFunctions
 using Polynomials
 using SparseArrays
 using BenchmarkTools
+using DelimitedFiles
 
 const MAXC2V = 1e3                      # saturate values for C2V (Inf approx)
 const MINC2V = -MAXC2V                  # -Inf approx
 
-function qfunc(x::Float64)
-    return 0.5 * erfc(x/sqrt(2))
+function qfunc(X::Float64)
+    return 0.5 * erfc(X/sqrt(2))
 end
 
 include("Koopman.jl")
@@ -39,7 +40,7 @@ CODE_LEN::Int = 256
 
 REDUN::Int = CODE_LEN - PAYLOAD
 
-TEST::Bool = false
+TEST::Bool = true
 PRINT::Bool = false
 
 PROTOCOL::String = "CRC"
@@ -54,10 +55,10 @@ MAX_QUERY::Int = 1_000_000_000
 MAX_ERR_LOC_VEC_LEN::Int = CODE_LEN
 
 # EbN0 = [1.0, 1.5, 2.0, 2.5, 3.0]
-EbN0 = [3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0]
+EbN0 = [3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0]
 
-FULL = true
-NEW_PLOT::Bool = false
+FULL::Bool = true
+MEAN::Bool = true
 MAX_DEPTH = 100000
 
 ### Parity-check matrix
@@ -125,6 +126,8 @@ end
 
 plotlyjs()
 
+Y_MEAN = readdlm("$CODE_LEN.txt",'\t',Float64,'\n')
+
 if !TEST
     PRINT = false
     for k in eachindex(EbN0)
@@ -132,6 +135,32 @@ if !TEST
         # transform EbN0 in standard deviations
         variance = exp10.(-EbN0[k]/10) / (2*RR)
         stdev = sqrt.(variance)
+
+        if FULL && MEAN
+
+            anchors = Vector{Int}(undef,3)
+            offsets = Vector{Int}(undef,2)
+            alphas = Vector{Float64}(undef,2)
+            slopes = Vector{Int}(undef,2)
+            min_slope = line_segmentation!(anchors,offsets,slopes,alphas,
+                                                        Y_MEAN[2:end,k],CODE_LEN,2)
+            # p0 = plot(Y_MEAN[2:end,k]/min_slope)
+            #     for i in 1:2
+            #         if i == 1
+            #             j_vec = collect(anchors[i]:anchors[i+1])
+            #         else
+            #             j_vec = collect((anchors[i]+1):anchors[i+1])
+            #         end
+            #         segment = offsets[i] .+ (j_vec .- anchors[i])*slopes[i]
+            #         plot!(p0,j_vec,segment, lw = 2, color = 2)
+            #     end
+            # display(p0)
+
+        else
+            anchors = [0]
+            offsets = [0]
+            slopes = [0]
+        end
 
         stats = @timed Threads.@threads for i in 1:NTHREADS
 
@@ -146,10 +175,14 @@ if !TEST
                 MAX_QUERY,
                 ABANDON,
                 FULL,
-                MAX_DEPTH
+                MAX_DEPTH,
+                MEAN,
+                anchors,
+                offsets,
+                slopes
                 )
-            # errors, trials = GRAND_sim(MAX_ERRORS,PP,RGN_SEEDS[i],stdev,false,H_COLUMNS,EVEN_CODE,MAX_ERR_LOC_VEC_LEN)
-            # _,_,errors,_,trials = simcore(PAYLOAD,CODE_LEN,nothing,stdev,HH,PP,NC,NV,[0 0],"PEG",0,"Flooding","TANH",MAX_ERRORS,50,false,0,0.0,[1],0.0,RGN_SEEDS[i],false,false) 
+            # errors, trials = GRAND_sim(MAX_ERRORS,PP,RGN_SEEDS[i],STDEV,false,H_COLUMNS,EVEN_CODE,MAX_ERR_LOC_VEC_LEN)
+            # _,_,errors,_,trials = simcore(PAYLOAD,CODE_LEN,nothing,STDEV,HH,PP,NC,NV,[0 0],"PEG",0,"Flooding","TANH",MAX_ERRORS,50,false,0,0.0,[1],0.0,RGN_SEEDS[i],false,false) 
             Trials[k,i] = trials
             Errors[k,i] = errors
             # Errors[k,i] = errors[end]
@@ -165,49 +198,76 @@ if !TEST
     end
     title = "ORBGRAND (N = $CODE_LEN, K = $PAYLOAD)"
     if FULL
-        label = "2-line ORBGRAND"
+        if MEAN
+            label = "2-line ORBGRAND using mean"
+        else
+            label = "2-line ORBGRAND"
+        end
     else
         label = "basic ORBGRAND"
     end
-    if NEW_PLOT
-        plot(EbN0, log10.(FER),label=label,title=title)
+    if !FULL
+        p = plot(EbN0, log10.(FER),label=label,title=title)
     else
-        plot!(EbN0, log10.(FER),label=label,title=title)
+        plot!(p,EbN0, log10.(FER),label=label,title=title)
     end
     
 else
-    variance = exp10.(-EbN0[end]/10) / (2*RR)
-    stdev = sqrt.(variance) 
-    # @benchmark GRAND_sim(1,$PP,$(RGN_SEEDS[1]),$stdev,$PRINT,$HH,$EVEN_CODE) seconds = 30
-    # @time errors, trials = GRAND_sim(3,PP,RGN_SEEDS[1],stdev,PRINT,H_COLUMNS,EVEN_CODE,10)
+    VARIANCE = exp10.(-EbN0[end-1]/10) / (2*RR)
+    STDEV = sqrt.(VARIANCE) 
+
+    if FULL && MEAN
+
+        ANCHORS = Vector{Int}(undef,3)
+        OFFSETS = Vector{Int}(undef,2)
+        ALPHAS = Vector{Float64}(undef,2)
+        SLOPES = Vector{Int}(undef,2)
+        MIN_SLOPE = line_segmentation!(ANCHORS,OFFSETS,SLOPES,ALPHAS,
+                                                    Y_MEAN[2:end,end-1],CODE_LEN,2)
+    else
+        ANCHORS = [0]
+        OFFSETS = [0]
+        SLOPES = [0]        
+    end
+
     if PRINT
         errors, trials = ORBGRAND_sim(
-                            6,
+                            1,
                             PP,
                             RGN_SEEDS[1],
-                            stdev,
+                            STDEV,
                             PRINT,
                             H_COLUMNS,
                             EVEN_CODE,
                             MAX_QUERY,
                             ABANDON,
                             FULL,
-                            MAX_DEPTH)
+                            MAX_DEPTH,
+                            MEAN,
+                            ANCHORS,
+                            OFFSETS,
+                            SLOPES,
+                            )
     else
         @time @profview errors, trials = ORBGRAND_sim(
-                            6,
+                            1,
                             PP,
                             RGN_SEEDS[1],
-                            stdev,
+                            STDEV,
                             PRINT,
                             H_COLUMNS,
                             EVEN_CODE,
                             MAX_QUERY,
                             ABANDON,
                             FULL,
-                            MAX_DEPTH)
+                            MAX_DEPTH,
+                            MEAN,
+                            ANCHORS,
+                            OFFSETS,
+                            SLOPES
+                            )
     end
 
     display((trials, errors))
-    # @benchmark ORBGRAND_sim(1,$PP,$(RGN_SEEDS[1]),$stdev,$PRINT,$H_COLUMNS,$EVEN_CODE,$MAX_QUERY,$ABANDON) seconds = 30
+    # @benchmark ORBGRAND_sim(1,$PP,$(RGN_SEEDS[1]),$STDEV,$PRINT,$H_COLUMNS,$EVEN_CODE,$MAX_QUERY,$ABANDON) seconds = 30
 end
