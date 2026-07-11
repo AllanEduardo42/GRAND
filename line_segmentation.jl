@@ -17,8 +17,6 @@
 # code_len              :codeword length (i.e., N)
 # num_segments          :number of linear segments
 
-
-
 function line_segmentation!(
     anchors::Vector{Int},
     offsets::Vector{Int},    
@@ -37,23 +35,28 @@ function line_segmentation!(
         anchors[1] = 1
         anchors[end] = end_point
 
-        L = sorted_abs_signal[1]
+        if num_segments > 1
 
-        for i in 2:num_segments
-            m = (sorted_abs_signal[end_point]-L)/(end_point - 1)
-            max_dif = 0
-            idx = 1
-            for j in 1:end_point
-                dif = abs(sorted_abs_signal[j] - (L + (j - 1)*m))
-                if dif > max_dif
-                    max_dif = dif
-                    idx = j
+            L = sorted_abs_signal[1]
+
+            for i in 2:num_segments
+                # slope
+                m = (sorted_abs_signal[end_point]-L)/(end_point - 1) # anchors[1] = 1
+                max_dif = 0
+                min_anchor = num_segments - i + 2
+                idx = min_anchor
+                for j in min_anchor:end_point
+                    dif = abs(sorted_abs_signal[j] - (L + (j - 1)*m))
+                    if dif > max_dif
+                        max_dif = dif
+                        idx = j
+                    end
                 end
+                anchors[i] = idx
+                end_point = idx
             end
-            anchors[i] = idx
-            end_point = idx
+            sort!(anchors)
         end
-        sort!(anchors)
 
         # 2) Find minimum slope
         min_slope = sorted_abs_signal[end]

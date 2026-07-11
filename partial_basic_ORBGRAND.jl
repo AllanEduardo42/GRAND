@@ -20,29 +20,30 @@
 
 
 function partial_basic_ORBGRAND!(
-    err_loc_vecs::Matrix{Int},
+    err_loc_vecs::Array{Int,3},
     partition_vec::Vector{Int},
     cum_drops::Vector{Int},
+    segment::Int,
     w::Int,
     WL::Int,
     anchor_1::Int,
     anchor_2::Int,
     max_depth::Int
 )
-    @fastmath begin
+    @inbounds @fastmath begin
         n = 0
         segment_len = anchor_2 - anchor_1
         if w == 1
             n += 1
-            err_loc_vecs[1,n] = WL + anchor_1
+            err_loc_vecs[1,n,segment] = WL + anchor_1
         elseif w == 2
             # query noise at locations [anchor_1,W-1], [anchor_1+1,W-2], [anchor_1+2,W-3],...
             b = min(WL-1,anchor_2-anchor_1)
             a = WL - b
             while a < b
                 n += 1
-                err_loc_vecs[1,n] = a + anchor_1
-                err_loc_vecs[2,n] = b + anchor_1
+                err_loc_vecs[1,n,segment] = a + anchor_1
+                err_loc_vecs[2,n,segment] = b + anchor_1
                 a += 1
                 b -= 1            
             end
@@ -91,9 +92,8 @@ function partial_basic_ORBGRAND!(
                 end
     
                 for i in 1:w
-                    err_loc_vecs[i,n] = partition_vec[i] + i + anchor_1
+                    err_loc_vecs[i,n,segment] = partition_vec[i] + i + anchor_1
                 end
-
 
                 landslide = false
                 # Find the last index with an accumulated drop >=2

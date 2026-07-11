@@ -3,8 +3,9 @@
 # 15 Jun 2026
 # Core function to simulate the performance of the ORBGRAND algorithm
 
-include("basic_ORBGRAND.jl")
+include("one_line_ORBGRAND.jl")
 include("two_line_ORBGRAND.jl")
+include("three_line_ORBGRAND.jl")
 include("line_segmentation.jl")
 include("find_valid_logistic_weights.jl")
 include("auxiliary functions.jl")
@@ -22,6 +23,7 @@ function ORBGRAND_sim(
     full::Bool,
     max_depth::Int,
     mean::Bool,
+    num_segments::Int,
     anchors_mean::Vector{Int},
     offsets_mean::Vector{Int},
     slopes_mean::Vector{Int}
@@ -32,7 +34,7 @@ function ORBGRAND_sim(
     code_len = M + K
 
     # ORBGRAND constants
-    W_upper_bound = code_len*(code_len+1)÷2   # logistic weight W ≤ upper_bound
+    W_upper_bound = code_len*(code_len+1)÷2 + 1   # logistic weight W ≤ upper_bound
     cte = 2*code_len + 1
 
     # Set the random seeds
@@ -81,24 +83,23 @@ function ORBGRAND_sim(
 
     sorted_abs_signal = Vector{Float64}(undef,code_len)
 
-    if full  
-        err_loc_vecs_1 = zeros(Int,code_len,max_depth)
-        err_loc_vecs_2 = zeros(Int,code_len,max_depth)
-        W_lens = zeros(Int,2)
-        Ranges = Matrix{StepRange{Int,Int}}(undef,W_upper_bound,2)
-        W_list = Matrix{Int}(undef,W_upper_bound,2)
+    if full && num_segments > 1
+        err_loc_vecs = zeros(Int,code_len,max_depth,num_segments)
+        W_lens = zeros(Int,num_segments)
+        Ranges = Matrix{StepRange{Int,Int}}(undef,W_upper_bound,num_segments)
+        W_list = Matrix{Int}(undef,W_upper_bound,num_segments)
         if !mean      
-            anchors = Vector{Int}(undef,3)
-            offsets = Vector{Int}(undef,2)
-            alphas = Vector{Float64}(undef,2)
-            slopes = Vector{Int}(undef,2)
+            anchors = Vector{Int}(undef,num_segments+1)
+            offsets = Vector{Int}(undef,num_segments)
+            alphas = Vector{Float64}(undef,num_segments)
+            slopes = Vector{Int}(undef,num_segments)
         else
             anchors = copy(anchors_mean)
             offsets = copy(offsets_mean)
             slopes = copy(slopes_mean)
             W_list .= 0
             find_valid_logistic_weights!(W_list,W_lens,Ranges,anchors,offsets,
-                                                        slopes,W_upper_bound,2)
+                                            slopes,W_upper_bound,num_segments)
         end        
     end
 
@@ -206,46 +207,89 @@ ________________________________________________________________________________
             partition_vec .= 0
             cum_drops .= 0
 
-            if full
-                if !mean
+            if full && num_segments > 1
+                if !mean 
                     min_slope = line_segmentation!(anchors,offsets,slopes,alphas,
-                                                sorted_abs_signal,code_len,2)
+                                        sorted_abs_signal,code_len,num_segments)
                     W_list .= 0
-                    find_valid_logistic_weights!(W_list,W_lens,Ranges,anchors,offsets,
-                                                            slopes,W_upper_bound,2)
-                end                
+                    find_valid_logistic_weights!(W_list,W_lens,Ranges,anchors,
+                                    offsets,slopes,W_upper_bound,num_segments)
 
-                # display(W_list)
-
-                # if sorted_true_err_loc_vec[1:k] == [4,5,9,10,11,120]
-                #     display("anchors: ")
-                #     display(anchors')
-                #     display("offsets: ")
-                #     display(offsets')
-                #     display("slopes: ")
-                #     display(slopes')
+                    # p0 = plot(sorted_abs_signal/min_slope,legend=false,xlabel="Rank order",title="ordered |signal|")
+                    #     for i in 1:num_segments
+                    #         if i == 1
+                    #             j_vec = collect(anchors[i]:anchors[i+1])
+                    #         else
+                    #             j_vec = collect((anchors[i]+1):anchors[i+1])
+                    #         end
+                    #         segment = offsets[i] .+ (j_vec .- anchors[i])*slopes[i]
+                    #         plot!(p0,j_vec,segment, lw = 2, color = 2)
+                    #     end
+                    # display(p0)
+                end
+                
+                # if trials == 23224
+                #     display("offset = $offset")
                 # end
 
-                zerosyn, w = two_line_ORBGRAND!(
-                    err_loc_vec,
-                    err_loc_vecs_1,
-                    err_loc_vecs_2,
-                    partition_vec,
-                    cum_drops,
-                    syndrome,
-                    sorted_H_cols,
-                    max_query,
-                    W_upper_bound,
-                    W_list,
-                    W_lens,
-                    Ranges,
-                    anchors,
-                    offsets,
-                    slopes,
-                    max_depth
-                )
+                # display(W_list)
+                # display("anchors: ")
+                # display(anchors')
+                # display("offsets: ")
+                # display(offsets')
+                # display("slopes: ")
+                # display(slopes')
+                # display(anchors')
+
+
+                if num_segments == 2
+                    zerosyn, w = two_line_ORBGRAND!(
+                        err_loc_vec,
+                        err_loc_vecs,
+                        partition_vec,
+                        cum_drops,
+                        syndrome,
+                        sorted_H_cols,
+                        max_query,
+                        W_upper_bound,
+                        W_list,
+                        W_lens,
+                        Ranges,
+                        anchors,
+                        offsets,
+                        slopes,
+                        max_depth
+                    )
+                elseif num_segments == 3
+                    zerosyn, w = three_line_ORBGRAND!(
+                        err_loc_vec,
+                        err_loc_vecs,
+                        partition_vec,
+                        cum_drops,
+                        syndrome,
+                        sorted_H_cols,
+                        max_query,
+                        W_upper_bound,
+                        W_list,
+                        W_lens,
+                        Ranges,
+                        anchors,
+                        offsets,
+                        slopes,
+                        max_depth
+                    )
+                end
             else
-                zerosyn, w = basic_ORBGRAND!(
+                if full
+                    # num_segments = 1
+                    end_point = code_len÷2
+                    min_slope = (sorted_abs_signal[end_point] - sorted_abs_signal[1])/(end_point-1)                      
+                    offset = round(Int,sorted_abs_signal[1]/min_slope) - 1
+                else
+                    offset = 0
+                end
+
+                zerosyn, w = one_line_ORBGRAND!(
                         err_loc_vec,
                         partition_vec,
                         cum_drops,
@@ -257,9 +301,15 @@ ________________________________________________________________________________
                         inc,
                         w_init,
                         cte,
-                        abandon
+                        abandon,
+                        offset
                     )
             end
+
+            # if trials == 23224
+            #     display(err_loc_vec[1:w]')
+            #     display(zerosyn)
+            # end
 
             if zerosyn
                 for i in 1:w

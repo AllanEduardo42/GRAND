@@ -30,8 +30,8 @@ function find_valid_logistic_weights!(
     @inbounds @fastmath for i in 1:num_segments
         j = 0
         for W in 0:W_upper_bound
-            delta = anchors[i+1]-anchors[i]
-            valid, range = find_valid_hamming_weights!(W,offsets[i],delta,slopes[i])
+            size = anchors[i+1]-anchors[i]
+            valid, range = find_valid_hamming_weights!(W,offsets[i],size,slopes[i])
             if valid
                 j += 1
                 W_list[j,i] = W

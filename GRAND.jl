@@ -40,8 +40,9 @@ CODE_LEN::Int = 256
 
 REDUN::Int = CODE_LEN - PAYLOAD
 
-TEST::Bool = true
+TEST::Bool = false
 PRINT::Bool = false
+MAX_ERRORS_TEST::Int = 1
 
 PROTOCOL::String = "CRC"
 
@@ -55,11 +56,12 @@ MAX_QUERY::Int = 1_000_000_000
 MAX_ERR_LOC_VEC_LEN::Int = CODE_LEN
 
 # EbN0 = [1.0, 1.5, 2.0, 2.5, 3.0]
-EbN0 = [3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0]
+EbN0 = [3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0]
 
 FULL::Bool = true
-MEAN::Bool = true
-MAX_DEPTH = 100000
+MEAN::Bool = false
+MAX_DEPTH::Int = 100_000
+NUM_SEGMENTS::Int = 2
 
 ### Parity-check matrix
 
@@ -136,15 +138,15 @@ if !TEST
         variance = exp10.(-EbN0[k]/10) / (2*RR)
         stdev = sqrt.(variance)
 
-        if FULL && MEAN
+        if FULL && MEAN && NUM_SEGMENTS > 1
 
-            anchors = Vector{Int}(undef,3)
-            offsets = Vector{Int}(undef,2)
-            alphas = Vector{Float64}(undef,2)
-            slopes = Vector{Int}(undef,2)
+            anchors = Vector{Int}(undef,NUM_SEGMENTS+1)
+            offsets = Vector{Int}(undef,NUM_SEGMENTS)
+            alphas = Vector{Float64}(undef,NUM_SEGMENTS)
+            slopes = Vector{Int}(undef,NUM_SEGMENTS)
             min_slope = line_segmentation!(anchors,offsets,slopes,alphas,
-                                                        Y_MEAN[2:end,k],CODE_LEN,2)
-            # p0 = plot(Y_MEAN[2:end,k]/min_slope)
+                                            Y_MEAN[2:end,k],CODE_LEN,NUM_SEGMENTS)
+            # p0 = plot(Y_MEAN[2:end,k]/min_slope,legend=false,xlabel="Rank order",title="ordered |signal|")
             #     for i in 1:2
             #         if i == 1
             #             j_vec = collect(anchors[i]:anchors[i+1])
@@ -177,6 +179,7 @@ if !TEST
                 FULL,
                 MAX_DEPTH,
                 MEAN,
+                NUM_SEGMENTS,
                 anchors,
                 offsets,
                 slopes
@@ -198,75 +201,68 @@ if !TEST
     end
     title = "ORBGRAND (N = $CODE_LEN, K = $PAYLOAD)"
     if FULL
-        if MEAN
-            label = "2-line ORBGRAND using mean"
+        if MEAN && NUM_SEGMENTS > 1
+            label = "$NUM_SEGMENTS-line ORBGRAND using mean"
         else
-            label = "2-line ORBGRAND"
+            label = "$NUM_SEGMENTS-line ORBGRAND"
         end
     else
         label = "basic ORBGRAND"
     end
     if !FULL
-        p = plot(EbN0, log10.(FER),label=label,title=title)
+        p = plot(EbN0,log10.(FER),lw=2,label=label,title=title,size=(750,400))
     else
-        plot!(p,EbN0, log10.(FER),label=label,title=title)
+        plot!(p,EbN0,log10.(FER),lw=2,label=label,title=title)
     end
     
 else
-    VARIANCE = exp10.(-EbN0[end-1]/10) / (2*RR)
+    VARIANCE = exp10.(-EbN0[end]/10) / (2*RR)
     STDEV = sqrt.(VARIANCE) 
 
     if FULL && MEAN
 
-        ANCHORS = Vector{Int}(undef,3)
-        OFFSETS = Vector{Int}(undef,2)
-        ALPHAS = Vector{Float64}(undef,2)
-        SLOPES = Vector{Int}(undef,2)
+        ANCHORS = Vector{Int}(undef,NUM_SEGMENTS+1)
+        OFFSETS = Vector{Int}(undef,NUM_SEGMENTS)
+        ALPHAS = Vector{Float64}(undef,NUM_SEGMENTS)
+        SLOPES = Vector{Int}(undef,NUM_SEGMENTS)
         MIN_SLOPE = line_segmentation!(ANCHORS,OFFSETS,SLOPES,ALPHAS,
-                                                    Y_MEAN[2:end,end-1],CODE_LEN,2)
+                                        Y_MEAN[2:end,end],CODE_LEN,NUM_SEGMENTS)
+
+        # p0 = plot(Y_MEAN[2:end,end]/MIN_SLOPE,legend=false,xlabel="Rank order",title="ordered mean |signal|")
+        #     for i in 1:NUM_SEGMENTS
+        #         if i == 1
+        #             j_vec = collect(ANCHORS[i]:ANCHORS[i+1])
+        #         else
+        #             j_vec = collect((ANCHORS[i]+1):ANCHORS[i+1])
+        #         end
+        #         segment = OFFSETS[i] .+ (j_vec .- ANCHORS[i])*SLOPES[i]
+        #         plot!(p0,j_vec,segment, lw = 2, color = 2)
+        #     end
+        # display(p0)
     else
         ANCHORS = [0]
         OFFSETS = [0]
         SLOPES = [0]        
     end
 
-    if PRINT
-        errors, trials = ORBGRAND_sim(
-                            1,
-                            PP,
-                            RGN_SEEDS[1],
-                            STDEV,
-                            PRINT,
-                            H_COLUMNS,
-                            EVEN_CODE,
-                            MAX_QUERY,
-                            ABANDON,
-                            FULL,
-                            MAX_DEPTH,
-                            MEAN,
-                            ANCHORS,
-                            OFFSETS,
-                            SLOPES,
-                            )
-    else
-        @time @profview errors, trials = ORBGRAND_sim(
-                            1,
-                            PP,
-                            RGN_SEEDS[1],
-                            STDEV,
-                            PRINT,
-                            H_COLUMNS,
-                            EVEN_CODE,
-                            MAX_QUERY,
-                            ABANDON,
-                            FULL,
-                            MAX_DEPTH,
-                            MEAN,
-                            ANCHORS,
-                            OFFSETS,
-                            SLOPES
-                            )
-    end
+    @time errors, trials = ORBGRAND_sim(
+                        MAX_ERRORS_TEST,
+                        PP,
+                        RGN_SEEDS[1],
+                        STDEV,
+                        PRINT,
+                        H_COLUMNS,
+                        EVEN_CODE,
+                        MAX_QUERY,
+                        ABANDON,
+                        FULL,
+                        MAX_DEPTH,
+                        MEAN,
+                        NUM_SEGMENTS,
+                        ANCHORS,
+                        OFFSETS,
+                        SLOPES,
+                        )
 
     display((trials, errors))
     # @benchmark ORBGRAND_sim(1,$PP,$(RGN_SEEDS[1]),$STDEV,$PRINT,$H_COLUMNS,$EVEN_CODE,$MAX_QUERY,$ABANDON) seconds = 30

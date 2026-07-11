@@ -64,7 +64,10 @@ function find_valid_hamming_weights!(
         c = 8*slope*W
         d = b2^2 - c
         if d ≥ 0    # there is no range of valid hamming weights otherwise
-            sq_d = sqrt(d) 
+            sq_d = sqrt(d)
+            if isinteger(sq_d)
+                sq_d = Int(sq_d)        # to avoid round errors (0.99999999... ≠ 1)
+            end
             x = b2 - sq_d
             if x > 0
                 w_min = unsafe_trunc(Int,ceil(x/two_slopes))
@@ -72,6 +75,9 @@ function find_valid_hamming_weights!(
                 w_min = 0
             end
             sq_e = sqrt(b1^2 + c)
+            if isinteger(sq_e)
+                sq_e = Int(sq_e)        # to avoid round errors (0.99999999... ≠ 1)
+            end
             w_max =  unsafe_trunc(Int,min(floor((b2 + sq_d)/two_slopes),
                                           floor((sq_e - b1)/two_slopes)))
             if w_min ≤ w_max    # verify if the range is valid
