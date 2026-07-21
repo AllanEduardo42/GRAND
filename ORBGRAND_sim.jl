@@ -156,10 +156,12 @@ ________________________________________________________________________________
         # whether to query even or odd numbers of error locations; i,e., whether
         # length(err_loc_vec) is odd or even.
 
+        odd_parity = false
         if even_code
             inc = 2
             if reduce(xor,y_demod)
                 w_init = 1
+                odd_parity = true
             else
                 w_init = 2
             end
@@ -258,7 +260,9 @@ ________________________________________________________________________________
                         anchors,
                         offsets,
                         slopes,
-                        max_depth
+                        max_depth,
+                        even_code,
+                        odd_parity
                     )
                 elseif num_segments == 3
                     zerosyn, w = three_line_ORBGRAND!(

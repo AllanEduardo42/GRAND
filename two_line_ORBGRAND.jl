@@ -42,7 +42,9 @@ function two_line_ORBGRAND!(
     anchors::Vector{Int},
     offsets::Vector{Int},
     slopes::Vector{Int},
-    max_depth::Int
+    max_depth::Int,
+    even_code::Bool,
+    odd_parity::Bool
 )
 
     # number of noise guesses
@@ -86,6 +88,35 @@ function two_line_ORBGRAND!(
                 weights_1 = Ranges[k1,1]
                 weights_2 = Ranges[k2,2]
                 for w1 in weights_1
+                    # verify if the total hamming weight has correct parity
+                    new_weights_2 = weights_2
+                    if even_code
+                        valid_comb = false
+                        # test all w1 + w2
+                        for w2 in weights_2
+                            w = w1 + w2
+                            if odd_parity   # w must be odd
+                                if isodd(w)
+                                    valid_comb = true
+                                    w2_step = step(weights_2)
+                                    w2_last = last(weights_2)
+                                    new_weights_2 = w2:w2_step:w2_last
+                                    break
+                                end
+                            else            # w must be even
+                                if iseven(w)
+                                    w2_step = step(weights_2)
+                                    w2_last = last(weights_2)
+                                    new_weights_2 = w2:w2_step:w2_last
+                                    valid_comb = true
+                                    break
+                                end
+                            end
+                        end
+                        if !valid_comb
+                            continue
+                        end
+                    end
                     if w1 > 0
                         # partial basic ORBGRAND for the first segment
                         WL1 = div(W1 - o1*w1, s1)
@@ -115,7 +146,20 @@ function two_line_ORBGRAND!(
                                 syn1 ⊻= sorted_H_cols[err_loc_vec_view_1[i]]
                             end
                         end
-                        for w2 in weights_2
+                        for w2 in new_weights_2
+                            w = w1 + w2
+                            if even_code
+                                if odd_parity   # w must be odd
+                                    if iseven(w)
+                                        continue
+                                    end
+                                else            # w must be even
+                                    if isodd(w)
+                                        continue
+                                    end
+                                end
+                            end
+
                             if w2 == 0
                                 # if there is no error location vector in segment 2
                                 n_guesses += 1
@@ -156,7 +200,7 @@ function two_line_ORBGRAND!(
                                     for i in 1:w2
                                         err_loc_vec[w1+i] = err_loc_vec_view_2[i]
                                     end
-                                    return true, w1 + w2
+                                    return true, w
                                 end
                             end
                         end

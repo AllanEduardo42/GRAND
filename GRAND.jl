@@ -42,7 +42,7 @@ REDUN::Int = CODE_LEN - PAYLOAD
 
 TEST::Bool = false
 PRINT::Bool = false
-MAX_ERRORS_TEST::Int = 1
+MAX_ERRORS_TEST::Int = 20
 
 PROTOCOL::String = "CRC"
 
@@ -59,7 +59,7 @@ MAX_ERR_LOC_VEC_LEN::Int = CODE_LEN
 EbN0 = [3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0]
 
 FULL::Bool = true
-MEAN::Bool = false
+MEAN::Bool = true
 MAX_DEPTH::Int = 100_000
 NUM_SEGMENTS::Int = 2
 
